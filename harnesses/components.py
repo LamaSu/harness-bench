@@ -22,9 +22,102 @@ from typing import Any
 
 from harnesses.base import Cost, Event, Harness, Tool, UnsupportedAblationError
 
-# (harness_name, layer, arm) -> {} | {"shim": "<callable_path>"}.
-# Populated from docs/03-component-ablation.md when that doc lands.
-ABLATION_MATRIX: dict[tuple[str, str, str], dict[str, Any]] = {}
+# (harness_name, layer, arm) -> entry dict.
+#
+# Entry schema (all keys required):
+#   description: str                -- 1-2 sentence summary from docs/03.
+#   config_override: dict[str, Any] -- parameters this arm sets on the base harness.
+#   shim: str | None                -- dotted callable path for monkey-patch arms;
+#                                      None if pure-config. Shims are stubs for now;
+#                                      see TODO comments near each reference.
+#   depends_on: list[str]           -- cross-layer arm IDs that MUST be co-applied
+#                                      (e.g. ARM-SA-C parallel best-of-N needs a
+#                                      verification arm to pick the winner).
+#   applicable_harnesses: list[str] -- harnesses that can natively run this arm;
+#                                      empty list means "swap-only" — the arm
+#                                      requires running a different harness binary
+#                                      entirely (OpenHands, Cline, Aider, Goose,
+#                                      Continue) and cannot be replicated via
+#                                      wrapper on the convergent Claude Code shell.
+#
+# Arm-ID mapping: docs/03 uses CL-1..CL-4 etc.; we normalize to ARM-<LAYER>-<LETTER>
+# where 1->A, 2->B, 3->C, 4->D, 5->E. See docs/03 §2.x summary table (37 arms total).
+#
+# Populated from docs/03-component-ablation.md (2026-04-21).
+ABLATION_MATRIX: dict[tuple[str, str, str], dict[str, Any]] = {
+    # --------------------------------------------------------------------
+    # Layer 1: control_loop  (4 arms: A-D)
+    # --------------------------------------------------------------------
+    ("claude_code_go", "control_loop", "ARM-CL-A"): {
+        "description": (
+            "BASELINE — pure single-thread ReAct. Synchronous tool-call loop, "
+            "~30s/turn, no reflection on tool failure (just appends error and "
+            "continues). docs/03 §2.1 CL-1."
+        ),
+        "config_override": {
+            "control_loop.mode": "react",
+            "control_loop.max_reflections": 0,
+            "control_loop.async_events": False,
+            "control_loop.orchestrator": False,
+        },
+        "shim": None,
+        "depends_on": [],
+        "applicable_harnesses": ["claude_code_go"],
+    },
+    ("claude_code_go", "control_loop", "ARM-CL-B"): {
+        "description": (
+            "ReAct + reflection-bound: on tool failure (lint/test/non-zero exit), "
+            "re-query the model with failure as observation, up to 3 reflections. "
+            "Aider-style auto_lint/auto_test. docs/03 §2.1 CL-2."
+        ),
+        "config_override": {
+            "control_loop.mode": "react",
+            "control_loop.max_reflections": 3,
+            "control_loop.auto_lint": True,
+            "control_loop.auto_test": True,
+        },
+        # TODO(shim): implement harnesses.shims.inject_reflection_on_failure
+        #             — post-tool hook that catches non-zero exit + lint diag +
+        #               test-failure and re-injects as a model turn.
+        "shim": "harnesses.shims.inject_reflection_on_failure",
+        "depends_on": [],
+        "applicable_harnesses": ["claude_code_go", "aider"],
+    },
+    ("claude_code_go", "control_loop", "ARM-CL-C"): {
+        "description": (
+            "Event-driven async controller — OpenHands-style _step() + event "
+            "stream + should_step() decision. Model action published as event; "
+            "observation event triggers next _step. docs/03 §2.1 CL-3. SWAP arm: "
+            "cannot be retrofit onto claude_code_go."
+        ),
+        "config_override": {
+            "control_loop.mode": "event_driven",
+            "control_loop.async_events": True,
+        },
+        "shim": None,
+        "depends_on": [],
+        # Empty list: this arm is swap-only — run OpenHands V0 as the harness for
+        # this cell. See docs/03 §6.1 (swap strategy) and §6.2.
+        "applicable_harnesses": [],
+    },
+    ("claude_code_go", "control_loop", "ARM-CL-D"): {
+        "description": (
+            "Multi-agent orchestrator wrapping inner ReAct. Outer orchestrator "
+            "decomposes task, spawns N worktree-isolated inner agents, merges "
+            "results. Maps to /go Phase 1b wave model. docs/03 §2.1 CL-4."
+        ),
+        "config_override": {
+            "control_loop.orchestrator": True,
+            "control_loop.wave_max_parallel": 4,
+            "control_loop.single_agent_shortcircuit": False,
+        },
+        "shim": None,
+        # Orchestrator with no sub-agents collapses to sequential ReAct (= CL-A).
+        # docs/03 §3.1 hard dependency: CL-4 requires SA-B, SA-C, SA-D, or SA-E.
+        "depends_on": ["ARM-SA-B", "ARM-SA-C", "ARM-SA-D", "ARM-SA-E"],
+        "applicable_harnesses": ["claude_code_go"],
+    },
+}
 
 
 class ComponentAblationHarness(Harness):
