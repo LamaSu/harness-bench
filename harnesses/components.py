@@ -638,7 +638,124 @@ ABLATION_MATRIX: dict[tuple[str, str, str], dict[str, Any]] = {
         "depends_on": [],
         "applicable_harnesses": [],  # OpenHands-only swap cell.
     },
+
+    # --------------------------------------------------------------------
+    # Layer 8: verification  (5 arms: A-E)
+    # --------------------------------------------------------------------
+    ("claude_code_go", "verification", "ARM-V-A"): {
+        "description": (
+            "NONE / telemetry only — Continue baseline. No verification loop. "
+            "Just emit telemetry. Establishes 'demo not product' floor. "
+            "docs/03 §2.8 V-1."
+        ),
+        "config_override": {
+            "verification.mode": "telemetry_only",
+            "verification.shadow_verify": False,
+            "verification.smoke_test": False,
+            "verification.inline_reflect": False,
+        },
+        # TODO(shim): implement harnesses.shims.disable_verification
+        #             — turns off shadow-verifier, smoke-test, and inline
+        #               lint+test reflection across the run.
+        "shim": "harnesses.shims.disable_verification",
+        "depends_on": [],
+        "applicable_harnesses": ["claude_code_go", "continue_dev"],
+    },
+    ("claude_code_go", "verification", "ARM-V-B"): {
+        "description": (
+            "Loop-detector + stuck-recovery — OpenHands StuckDetector + Goose "
+            "compact_messages retry. Detects repetition; recovers via "
+            "compaction or backtrack. docs/03 §2.8 V-2. Maps to user's "
+            "watchdog.sh hook."
+        ),
+        "config_override": {
+            "verification.mode": "loop_detector",
+            "verification.stuck_threshold_ms": 600_000,
+            "verification.recovery": "compact_or_backtrack",
+        },
+        "shim": None,
+        "depends_on": [],
+        "applicable_harnesses": ["claude_code_go", "openhands", "goose"],
+    },
+    ("claude_code_go", "verification", "ARM-V-C"): {
+        "description": (
+            "Inline reflect-on-lint+test — Aider auto_lint+auto_test. After "
+            "every edit, run lint + test; on failure, append diagnostic to "
+            "next prompt. docs/03 §2.8 V-3. Wrappable via post-tool hook "
+            "running `npm run lint && npm test` (or language-equivalent) "
+            "after every Edit/Write call."
+        ),
+        "config_override": {
+            "verification.mode": "inline_lint_test",
+            "verification.inline_reflect": True,
+            "verification.run_lint_after_edit": True,
+            "verification.run_test_after_edit": True,
+        },
+        # TODO(shim): implement harnesses.shims.inline_lint_test
+        #             — post-tool hook that runs lint+test after Edit/Write
+        #               and feeds failure diagnostics into next prompt.
+        "shim": "harnesses.shims.inline_lint_test",
+        # Soft dep from docs/03 §3.2: V-3 is the "test loop" half of CL-B
+        # — pairing them reproduces full Aider mechanism.
+        "depends_on": [],
+        "applicable_harnesses": ["claude_code_go", "aider"],
+    },
+    ("claude_code_go", "verification", "ARM-V-D"): {
+        "description": (
+            "Browser/REPL self-test in dedicated subagent — Replit Agent 3 + "
+            "Cursor 2 native browser pattern. Subagent runs Playwright/REPL "
+            "against the implementation; verifies functionality + DOM. "
+            "docs/03 §2.8 V-4. Maps to /go Phase 7 smoke-test (6-check + "
+            "self-heal max 3 iterations)."
+        ),
+        "config_override": {
+            "verification.mode": "browser_repl_subagent",
+            "verification.smoke_test": True,
+            "verification.smoke_check_count": 6,
+            "verification.smoke_self_heal_max": 3,
+        },
+        "shim": None,
+        "depends_on": [],
+        "applicable_harnesses": ["claude_code_go"],
+    },
+    ("claude_code_go", "verification", "ARM-V-E"): {
+        "description": (
+            "Post-hoc shadow audit — user's shadow-verifier haiku. After "
+            "implementer completes, haiku-based audit checks output matches "
+            "request, tests ran, no regressions (~$0.001/check). docs/03 "
+            "§2.8 V-5. Default for /go Phase 6."
+        ),
+        "config_override": {
+            "verification.mode": "shadow_audit",
+            "verification.shadow_verify": True,
+            "verification.shadow_model": "haiku",
+            "verification.shadow_cost_per_check_usd": 0.001,
+        },
+        "shim": None,
+        "depends_on": [],
+        "applicable_harnesses": ["claude_code_go"],
+    },
 }
+
+
+def get_arm_config(harness: str, layer: str, arm_id: str) -> dict[str, Any]:
+    """Fetch ABLATION_MATRIX entry; raise UnsupportedAblationError if missing.
+
+    :param harness: harness name (e.g., "claude_code_go").
+    :param layer: one of HARNESS_LAYERS (control_loop / reasoning /
+        tool_surface / tool_catalog / memory / sub_agents / safety /
+        verification).
+    :param arm_id: arm identifier in the form "ARM-<LAYER>-<LETTER>"
+        (e.g., "ARM-M-B"). See docs/03-component-ablation.md §2.x.
+    :returns: the matrix entry dict — keys: description, config_override,
+        shim, depends_on, applicable_harnesses.
+    :raises UnsupportedAblationError: if (harness, layer, arm_id) not in
+        ABLATION_MATRIX.
+    """
+    key = (harness, layer, arm_id)
+    if key not in ABLATION_MATRIX:
+        raise UnsupportedAblationError(harness, layer, arm_id)
+    return ABLATION_MATRIX[key]
 
 
 class ComponentAblationHarness(Harness):
@@ -710,4 +827,5 @@ class ComponentAblationHarness(Harness):
 __all__ = [
     "ABLATION_MATRIX",
     "ComponentAblationHarness",
+    "get_arm_config",
 ]
