@@ -141,38 +141,75 @@ def _extract_sample_text(sample: Any) -> tuple[str, str]:
 # Response extraction from harness Events
 # ----------------------------------------------------------------------
 
+_GO_STATUS_HINTS = (
+    "/go ",
+    "Phase ",
+    "elapsed ",
+    "Agents:",
+    "spark-deployer",
+    "Briefing injection",
+    "[harness]",
+    "[supervisor]",
+    "├",
+    "│",
+    "└",
+    "┃",
+    "━",
+)
+
+
+def _looks_like_status_bar(line: str) -> bool:
+    """Heuristic — true if the line looks like a /go pipeline status line
+    rather than the model's actual response."""
+    if not line:
+        return True
+    stripped = line.strip()
+    if len(stripped) < 30:
+        return True
+    return any(hint in stripped for hint in _GO_STATUS_HINTS)
+
+
 def _extract_response(events: list[dict[str, Any]]) -> str:
     """Scan the Event list from a harness run for the most plausible final
     textual response.
 
-    Strategy:
-        1. Prefer any Event with kind == "completion" that carries a text
-           payload.
-        2. Otherwise take the last `text`-kind Event's payload.line.
-        3. Fallback: concatenate all text lines.
-    """
-    # 1. look for explicit completion/message/text with substantial content
-    for ev in reversed(events):
-        kind = ev.get("kind", "")
-        payload = ev.get("payload", {}) or {}
-        # Message-style payload
-        for key in ("response", "text", "message", "content", "output"):
-            val = payload.get(key)
-            if isinstance(val, str) and val.strip():
-                return val.strip()
-        # Line-style (from our _parse_stdout_line fallback)
-        line = payload.get("line")
-        if kind == "text" and isinstance(line, str) and line.strip():
-            return line.strip()
+    /go output is a stream of status bars + occasional model output. The
+    model's actual answer is usually the longest non-status block.
 
-    # 3. concatenate
-    parts = []
+    Strategy:
+        1. Look for any Event with a structured response/text/message field.
+        2. Otherwise concatenate all `text`-kind lines that don't look like
+           status bars, then return that block — typically the model output.
+        3. Final fallback: concatenate everything (truncated).
+    """
+    # 1. structured response keys
+    for ev in reversed(events):
+        payload = ev.get("payload", {}) or {}
+        for key in ("response", "text", "message", "content", "output", "result"):
+            val = payload.get(key)
+            if isinstance(val, str) and val.strip() and not _looks_like_status_bar(val):
+                return val.strip()
+
+    # 2. join non-status text lines
+    candidate_lines: list[str] = []
+    for ev in events:
+        if ev.get("kind") != "text":
+            continue
+        payload = ev.get("payload", {}) or {}
+        line = payload.get("line")
+        if isinstance(line, str) and not _looks_like_status_bar(line):
+            candidate_lines.append(line.strip())
+    if candidate_lines:
+        return "\n".join(candidate_lines).strip()
+
+    # 3. fallback: ALL lines concatenated (indicative of /go-only-status output)
+    all_lines = []
     for ev in events:
         payload = ev.get("payload", {}) or {}
         line = payload.get("line")
         if isinstance(line, str):
-            parts.append(line)
-    return "\n".join(parts).strip()
+            all_lines.append(line)
+    return "\n".join(all_lines).strip()
 
 
 # ----------------------------------------------------------------------
@@ -324,8 +361,17 @@ async def run_one_axis(
     # Create ONE harness per axis (reuse sandbox cwd) — reduces init overhead
     sandbox_dir = Path(os.environ.get("TMPDIR", "/tmp")) / f"harness-bench-sandbox-{axis}-{int(time.time())}"
     sandbox_dir.mkdir(parents=True, exist_ok=True)
+    # Resolve claude binary: prefer explicit CLAUDE_BIN env var, then shutil.which,
+    # then fall back to standard ~/.npm-global/bin/claude (Spark/user install).
+    import shutil as _shutil
+    claude_bin = (
+        os.environ.get("CLAUDE_BIN")
+        or _shutil.which("claude")
+        or str(Path.home() / ".npm-global" / "bin" / "claude")
+    )
     harness = ClaudeCodeGoHarness(
         model=harness_model,
+        claude_bin=claude_bin,
         sandbox_cwd=sandbox_dir,
         timeout_s=timeout_s,
         max_budget_usd=per_sample_budget_usd,

@@ -1,0 +1,9 @@
+name: v1-smoke-test
+harness: claude_code_go
+model: claude-sonnet-4-6
+max_samples_per_axis: 1
+budget_per_sample_usd: 0.20
+timeout_per_sample_s: 300
+axes:
+  - {id: BS1, task: tasks.bisociation.bs1_analogy_retrieval, fn: bs1_analogy_retrieval, limit_kwarg: max_samples, arm: ARM-M-A}
+output: results/v1-smoke-test-{timestamp}/
