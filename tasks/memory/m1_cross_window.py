@@ -52,9 +52,18 @@ DISTANCE_BUCKETS: list[tuple[int, int | None]] = [
     (101, None),  # 100+
 ]
 
-# HF dataset ID per catalog #9; split "test" is the canonical eval slice.
+# HF dataset ID per catalog #9. The upstream repo ships three JSON files
+# (longmemeval_oracle.json, longmemeval_s_cleaned.json, longmemeval_m_cleaned.json).
+# `datasets.load_dataset` will greedily generate ALL three splits when the
+# path is given without `data_files=` — and longmemeval_m_cleaned has Arrow
+# int32 length-prefix overflows on its largest records. Always pin to
+# longmemeval_oracle via data_files to skip the M build.
 LONGMEMEVAL_HF_ID = "xiaowu0162/longmemeval-cleaned"
-LONGMEMEVAL_DEFAULT_SPLIT = "test"
+LONGMEMEVAL_DEFAULT_SPLIT = "oracle"
+LONGMEMEVAL_DATA_FILES: dict[str, str] = {
+    "oracle": "longmemeval_oracle.json",
+    "s_cleaned": "longmemeval_s_cleaned.json",
+}
 
 
 # Bucket weights in the headline M1_score; heavier weight on harder buckets.
@@ -70,18 +79,29 @@ def bucket_weight(bucket_size: int) -> float:
     return math.log2(bucket_size)
 
 
-def _format_history(history: list[dict[str, Any]] | None) -> str:
+def _format_history(
+    history: list[dict[str, Any]] | list[list[dict[str, Any]]] | None,
+    session_ids: list[str] | None = None,
+) -> str:
     """Render a session history list as a plain-text prompt.
 
-    LongMemEval session history is a list of {role, content} dicts. We
-    serialize to a readable multi-turn transcript that a harness's memory
-    layer can ingest. Distance buckets remain meaningful because turn
-    order is preserved.
+    LongMemEval `haystack_sessions` is a list of SESSIONS; each session is a
+    list of {role, content, has_answer} turn dicts. Some other mirrors ship a
+    flat list of turns — the helper accepts both shapes.
+
+    When `session_ids` is supplied and `history` is shaped as list-of-sessions,
+    each session gets a `[Session NNN: id]` header so distance buckets remain
+    legible in the prompt.
     """
     if not history:
         return ""
+
+    # Detect shape: list-of-turns (dict at top level) vs list-of-sessions (list at top level)
+    is_nested = bool(history) and isinstance(history[0], list)
+
     lines: list[str] = []
-    for turn in history:
+
+    def _render_turn(turn: dict[str, Any]) -> str:
         role = turn.get("role", "user")
         content = turn.get("content", "")
         if isinstance(content, list):
@@ -90,8 +110,29 @@ def _format_history(history: list[dict[str, Any]] | None) -> str:
                 (c.get("text", "") if isinstance(c, dict) else str(c))
                 for c in content
             )
-        lines.append(f"[{role.upper()}] {content}")
-    return "\n\n".join(lines)
+        return f"[{role.upper()}] {content}"
+
+    if is_nested:
+        sessions = history  # type: ignore[assignment]
+        for idx, session in enumerate(sessions):
+            if not isinstance(session, list):
+                continue
+            sid = (
+                session_ids[idx]
+                if session_ids and idx < len(session_ids)
+                else f"session_{idx}"
+            )
+            lines.append(f"=== Session {idx:03d} [{sid}] ===")
+            for turn in session:
+                if isinstance(turn, dict):
+                    lines.append(_render_turn(turn))
+            lines.append("")  # blank between sessions
+    else:
+        for turn in history:  # type: ignore[assignment]
+            if isinstance(turn, dict):
+                lines.append(_render_turn(turn))
+
+    return "\n".join(lines).strip()
 
 
 def _assign_distance_bucket(
@@ -152,14 +193,23 @@ def _record_to_sample(record: dict[str, Any]) -> "Sample":
         or ""
     )
     bucket = _assign_distance_bucket(record)
+    session_ids = (
+        record.get("haystack_session_ids")
+        or record.get("session_ids")
+        or None
+    )
 
-    prompt_body = _format_history(history)
+    prompt_body = _format_history(history, session_ids=session_ids)
     prompt = (
         f"Conversation history (multi-session):\n\n{prompt_body}\n\n"
         f"---\n\nQuestion: {question}"
         if prompt_body
         else f"Question: {question}"
     )
+
+    # LongMemEval uses `question_type` (upstream column), not `qa_type`.
+    # Keep both keys in metadata for back-compat with downstream scorers.
+    qa_type = record.get("question_type") or record.get("qa_type")
 
     return Sample(
         input=prompt,
@@ -169,7 +219,8 @@ def _record_to_sample(record: dict[str, Any]) -> "Sample":
             "domain": "general",
             "license_tag": "MIT",
             "source_id": qid,
-            "qa_type": record.get("qa_type"),
+            "qa_type": qa_type,
+            "question_type": qa_type,
             "answer_type": record.get("answer_type", "open"),
             "distance_bucket": f"{bucket[0]}-{bucket[1] if bucket[1] else 'inf'}",
         },
@@ -246,11 +297,19 @@ def m1_cross_window(
         else samples_per_bucket * len(distance_buckets)
     )
 
+    # Pin to the oracle JSON file explicitly. Without `data_files=`,
+    # `datasets.load_dataset` tries to generate the `m_cleaned` split too,
+    # which has Arrow int32 overflow on its largest records and aborts the
+    # whole load. Passing data_files={split_name: file} scopes generation
+    # to the single file we actually need.
+    data_file = LONGMEMEVAL_DATA_FILES.get(hf_split, LONGMEMEVAL_DATA_FILES["oracle"])
+
     ds = hf_dataset(
         path=LONGMEMEVAL_HF_ID,
         split=hf_split,
         sample_fields=_record_to_sample,
         limit=limit,
+        data_files={hf_split: data_file},
     )
 
     return Task(
