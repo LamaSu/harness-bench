@@ -45,6 +45,27 @@ TIER_LADDER_SECONDS: tuple[int, ...] = (
 PASS_THRESHOLD: float = 0.50
 
 
+class TimeHorizonTier:
+    """Difficulty tier marker used by `time_horizon` aggregation.
+
+    A tier is identified by its upper-bound seconds-of-reference-human-time.
+    Samples whose `metadata['reference_human_seconds']` is <= `seconds` and
+    > the previous tier's bound belong to this tier.
+
+    Stub: real implementation will hold pass-rate, sample-count, and CI.
+    """
+
+    seconds: int
+    label: str
+
+    def __init__(self, seconds: int, label: str | None = None) -> None:
+        self.seconds = seconds
+        self.label = label or f"{seconds}s"
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"TimeHorizonTier(seconds={self.seconds}, label={self.label!r})"
+
+
 @scorer(metrics=["accuracy", "stderr"])
 def time_horizon(
     tier_ladder_seconds: tuple[int, ...] = TIER_LADDER_SECONDS,
@@ -70,5 +91,6 @@ def time_horizon(
 __all__ = [
     "TIER_LADDER_SECONDS",
     "PASS_THRESHOLD",
+    "TimeHorizonTier",
     "time_horizon",
 ]

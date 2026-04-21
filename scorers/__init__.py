@@ -11,22 +11,16 @@ from __future__ import annotations
 
 from scorers.pass_at_1 import pass_at_1
 from scorers.time_horizon import time_horizon, TimeHorizonTier
-from scorers.pareto import pareto_collector, ParetoPoint
-from scorers.bisociation_judge import (
-    bisociation_judge,
-    BisociationJudgeResult,
-    counterfactual_ablation,
-    llm_panel_score,
-    human_calibration_factor,
-)
-from scorers.openinference_otlp import openinference_otlp_exporter
+from scorers.pareto import pareto_collector, ParetoPoint, compute_frontier
+from scorers.bisociation_judge import bisociation_judge, JudgeReport
+from scorers.openinference_otlp import openinference_otlp
 
 SCORER_REGISTRY = {
     "pass_at_1": pass_at_1,
     "time_horizon": time_horizon,
     "pareto_collector": pareto_collector,
     "bisociation_judge": bisociation_judge,
-    "openinference_otlp": openinference_otlp_exporter,
+    "openinference_otlp": openinference_otlp,
 }
 
 __all__ = [
@@ -36,10 +30,8 @@ __all__ = [
     "TimeHorizonTier",
     "pareto_collector",
     "ParetoPoint",
+    "compute_frontier",
     "bisociation_judge",
-    "BisociationJudgeResult",
-    "counterfactual_ablation",
-    "llm_panel_score",
-    "human_calibration_factor",
-    "openinference_otlp_exporter",
+    "JudgeReport",
+    "openinference_otlp",
 ]
