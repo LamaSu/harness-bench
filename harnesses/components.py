@@ -117,6 +117,164 @@ ABLATION_MATRIX: dict[tuple[str, str, str], dict[str, Any]] = {
         "depends_on": ["ARM-SA-B", "ARM-SA-C", "ARM-SA-D", "ARM-SA-E"],
         "applicable_harnesses": ["claude_code_go"],
     },
+
+    # --------------------------------------------------------------------
+    # Layer 2: reasoning  (4 arms: A-D)
+    # --------------------------------------------------------------------
+    ("claude_code_go", "reasoning", "ARM-R-A"): {
+        "description": (
+            "BASELINE — interleaved thinking ON, default for Opus 4.6/4.7 + "
+            "Sonnet 4.6. Anthropic interleaved-thinking content blocks emitted "
+            "between tool calls. docs/03 §2.2 R-1."
+        ),
+        "config_override": {
+            "reasoning.thinking": "interleaved",
+            "reasoning.plan_then_execute": False,
+            "reasoning.echo_thinking": False,
+        },
+        "shim": None,
+        "depends_on": [],
+        "applicable_harnesses": ["claude_code_go"],
+    },
+    ("claude_code_go", "reasoning", "ARM-R-B"): {
+        "description": (
+            "Interleaved thinking OFF — hard-disable via Anthropic API "
+            "thinking={'type':'disabled'}. Faster turns, raw ReAct; expected "
+            "to hurt bisociation (BS-1/BS-2) but help condensation (FM-3) "
+            "and KV-cache drift (FM-4). docs/03 §2.2 R-2."
+        ),
+        "config_override": {
+            "reasoning.thinking": "disabled",
+            "reasoning.api_thinking_param": {"type": "disabled"},
+        },
+        "shim": None,
+        "depends_on": [],
+        "applicable_harnesses": ["claude_code_go"],
+    },
+    ("claude_code_go", "reasoning", "ARM-R-C"): {
+        "description": (
+            "Plan-then-execute split — Cline Plan/Act mode + Aider architect "
+            "mode. First call produces plan only (no tool calls); second call "
+            "executes (no plan revisions). docs/03 §2.2 R-3. Retrofittable on "
+            "claude_code_go via system-prompt that forbids tool calls until "
+            "<plan>...</plan> is emitted."
+        ),
+        "config_override": {
+            "reasoning.plan_then_execute": True,
+            "reasoning.plan_phase_no_tools": True,
+            "reasoning.execute_phase_no_replan": True,
+        },
+        # TODO(shim): implement harnesses.shims.plan_then_execute_prompt
+        #             — system-prompt injection that gates tool calls on the
+        #               <plan> block (for non-Cline harnesses).
+        "shim": "harnesses.shims.plan_then_execute_prompt",
+        "depends_on": [],
+        "applicable_harnesses": ["claude_code_go", "cline", "aider"],
+    },
+    ("claude_code_go", "reasoning", "ARM-R-D"): {
+        "description": (
+            "Echo thinking content across turns — Goose pattern. Preserve "
+            "reasoning_content from one turn and prepend to next assistant "
+            "message; provider-specific (Gemini, Kimi, DeepSeek). docs/03 §2.2 "
+            "R-4. Anthropic API doesn't expose reasoning_content cross-turn, "
+            "so this is effectively swap-only (Goose harness pin)."
+        ),
+        "config_override": {
+            "reasoning.echo_thinking": True,
+            "reasoning.preserve_reasoning_content": True,
+        },
+        "shim": None,
+        # Hard dependency from docs/03 §3.1: requires non-Anthropic provider.
+        "depends_on": [],
+        "applicable_harnesses": [],  # Goose-only swap cell.
+    },
+
+    # --------------------------------------------------------------------
+    # Layer 3: tool_surface  (5 arms: A-E)
+    # --------------------------------------------------------------------
+    ("claude_code_go", "tool_surface", "ARM-TS-A"): {
+        "description": (
+            "BASELINE — atomic core ~10 (Read/Edit/Glob/Grep/Bash/Write/Web/"
+            "Task) + MCP for everything else. Standard Claude Code surface. "
+            "docs/03 §2.3 TS-1."
+        ),
+        "config_override": {
+            "tool_surface.mode": "atomic_core_plus_mcp",
+            "tool_surface.atomic_count": 10,
+            "tool_surface.mcp_enabled": True,
+        },
+        "shim": None,
+        "depends_on": [],
+        "applicable_harnesses": ["claude_code_go"],
+    },
+    ("claude_code_go", "tool_surface", "ARM-TS-B"): {
+        "description": (
+            "Wide flat surface — Cline-style 24 named tool handlers (ReadFile, "
+            "WriteToFile, ApplyPatch, ExecuteCommand, BrowserTool, WebFetch, "
+            "WebSearch, SearchFiles, ListFiles, ListCodeDefinitionNames, "
+            "AskFollowupQuestion, AttemptCompletion, ...). No MCP. docs/03 "
+            "§2.3 TS-2. SWAP-only — pin Cline as harness."
+        ),
+        "config_override": {
+            "tool_surface.mode": "wide_flat_no_mcp",
+            "tool_surface.handler_count": 24,
+            "tool_surface.mcp_enabled": False,
+        },
+        "shim": None,
+        "depends_on": [],
+        "applicable_harnesses": [],  # Cline-only swap cell.
+    },
+    ("claude_code_go", "tool_surface", "ARM-TS-C"): {
+        "description": (
+            "Pure-MCP — every capability comes from an MCP extension, no fixed "
+            "atomic set. Goose ExtensionManager pattern. docs/03 §2.3 TS-3. "
+            "Impossible to retrofit onto claude_code_go without forking; SWAP "
+            "to Goose."
+        ),
+        "config_override": {
+            "tool_surface.mode": "pure_mcp",
+            "tool_surface.atomic_count": 0,
+            "tool_surface.mcp_enabled": True,
+        },
+        "shim": None,
+        # Hard dep from docs/03 §3.1: needs >=3 MCP servers configured.
+        "depends_on": [],
+        "applicable_harnesses": [],  # Goose-only swap cell.
+    },
+    ("claude_code_go", "tool_surface", "ARM-TS-D"): {
+        "description": (
+            "Text-native diffs — Aider pattern. Model emits diffs in textual "
+            "editblock/udiff/whole/patch format; no tool-call protocol. "
+            "docs/03 §2.3 TS-4. SWAP-only — pin Aider; sub-arm matrix on "
+            "diff format choice collapsed to one."
+        ),
+        "config_override": {
+            "tool_surface.mode": "text_diff",
+            "tool_surface.diff_format": "editblock",
+            "tool_surface.tool_call_protocol": False,
+        },
+        "shim": None,
+        "depends_on": [],
+        "applicable_harnesses": [],  # Aider-only swap cell.
+    },
+    ("claude_code_go", "tool_surface", "ARM-TS-E"): {
+        "description": (
+            "Bash-only — strip Read/Edit/Write/Glob/Grep, leave only Bash + "
+            "Task + Web. Tests whether dedicated file tools are load-bearing "
+            "or whether cat/grep/sed via Bash suffices. docs/03 §2.3 TS-5. "
+            "Wrappable on claude_code_go via per-tool allowlist hook."
+        ),
+        "config_override": {
+            "tool_surface.mode": "bash_only",
+            "tool_surface.allowlist": ["Bash", "Task", "WebFetch", "WebSearch"],
+            "tool_surface.mcp_enabled": False,
+        },
+        # TODO(shim): implement harnesses.shims.tool_allowlist_filter
+        #             — pre-tool hook that denies any tool not in allowlist.
+        "shim": "harnesses.shims.tool_allowlist_filter",
+        "depends_on": [],
+        "applicable_harnesses": ["claude_code_go"],
+    },
 }
 
 
