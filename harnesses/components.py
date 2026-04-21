@@ -275,6 +275,182 @@ ABLATION_MATRIX: dict[tuple[str, str, str], dict[str, Any]] = {
         "depends_on": [],
         "applicable_harnesses": ["claude_code_go"],
     },
+
+    # --------------------------------------------------------------------
+    # Layer 4: tool_catalog  (4 arms: A-D)
+    # --------------------------------------------------------------------
+    ("claude_code_go", "tool_catalog", "ARM-TC-A"): {
+        "description": (
+            "BASELINE — ToolSearch deferred loading (Claude Code v2.1.69+ "
+            "behavior, ~968 tokens base). All built-in tools deferred behind "
+            "ToolSearch; tool_reference blocks expand on demand (3-5 results "
+            "per query). docs/03 §2.4 TC-1."
+        ),
+        "config_override": {
+            "tool_catalog.mode": "deferred_toolsearch",
+            "tool_catalog.base_tokens": 968,
+            "tool_catalog.results_per_query": 4,
+        },
+        "shim": None,
+        "depends_on": [],
+        "applicable_harnesses": ["claude_code_go"],
+    },
+    ("claude_code_go", "tool_catalog", "ARM-TC-B"): {
+        "description": (
+            "Static eager-load all tools upfront — pre-v2.1.69 behavior, all "
+            "tool schemas loaded into system prompt (~14-16k tokens). Same as "
+            "Cline/Continue/Goose default. docs/03 §2.4 TC-2. Wrappable on "
+            "claude_code_go via downgrade or --no-tool-search flag."
+        ),
+        "config_override": {
+            "tool_catalog.mode": "static_eager",
+            "tool_catalog.base_tokens": 15000,
+            "tool_catalog.disable_tool_search": True,
+        },
+        # TODO(shim): implement harnesses.shims.disable_toolsearch
+        #             — eager-load all tool schemas; if --no-tool-search flag
+        #               unavailable on current CC binary, downgrade to v2.1.68.
+        "shim": "harnesses.shims.disable_toolsearch",
+        "depends_on": [],
+        "applicable_harnesses": ["claude_code_go", "cline", "continue_dev", "goose"],
+    },
+    ("claude_code_go", "tool_catalog", "ARM-TC-C"): {
+        "description": (
+            "Dynamic per-request prompt assembly — Cline pattern. "
+            "getSystemPrompt(promptContext) rebuilds tool surface per request "
+            "based on enabled features (e.g., READ_ONLY_TOOLS for read-only "
+            "mode). docs/03 §2.4 TC-3. SWAP-only — pin Cline."
+        ),
+        "config_override": {
+            "tool_catalog.mode": "dynamic_per_request",
+            "tool_catalog.context_aware": True,
+        },
+        "shim": None,
+        "depends_on": [],
+        "applicable_harnesses": [],  # Cline-only swap cell.
+    },
+    ("claude_code_go", "tool_catalog", "ARM-TC-D"): {
+        "description": (
+            "Microagent / skill-router (intent-filtered surface) — OpenHands "
+            "microagent + Claude Code's skill-router (haiku). Pre-classifies "
+            "task, injects only relevant skill metadata + tool descriptions. "
+            "Task-type-by-intent (vs ToolSearch's keyword-by-query). docs/03 "
+            "§2.4 TC-4. Maps to /go Phase 0 router."
+        ),
+        "config_override": {
+            "tool_catalog.mode": "skill_router",
+            "tool_catalog.router_model": "haiku",
+            "tool_catalog.intent_filter": True,
+        },
+        "shim": None,
+        # Hard dep from docs/03 §3.1: TC-4 requires SA-B or higher (the
+        # router itself is a sub-agent step).
+        "depends_on": ["ARM-SA-B", "ARM-SA-C", "ARM-SA-D", "ARM-SA-E"],
+        "applicable_harnesses": ["claude_code_go", "openhands"],
+    },
+
+    # --------------------------------------------------------------------
+    # Layer 5: memory  (5 arms: A-E)
+    # --------------------------------------------------------------------
+    ("claude_code_go", "memory", "ARM-M-A"): {
+        "description": (
+            "BASELINE — files + git only. Pure file substrate (CLAUDE.md, "
+            "MEMORY.md, ai/memory/*) plus git as durable store. No vector DB. "
+            "No summary cache beyond model's own context. docs/03 §2.5 M-1."
+        ),
+        "config_override": {
+            "memory.mode": "files_plus_git",
+            "memory.summary_cache": False,
+            "memory.event_log": False,
+            "memory.rag": False,
+            "memory.vector_only": False,
+        },
+        "shim": None,
+        "depends_on": [],
+        "applicable_harnesses": ["claude_code_go"],
+    },
+    ("claude_code_go", "memory", "ARM-M-B"): {
+        "description": (
+            "Files + auto-summary cache — Aider ChatSummary / Goose "
+            "compact_messages / Cline ContextManager. Periodically compress "
+            "conversation history into summary; cache to file. Auto-trigger "
+            "every N turns. docs/03 §2.5 M-2. Maps to /compact skill."
+        ),
+        "config_override": {
+            "memory.mode": "files_plus_summary",
+            "memory.summary_cache": True,
+            "memory.summary_trigger_turns": 25,
+            "memory.compaction_policy": "quarter_truncate",
+        },
+        # TODO(shim): implement harnesses.shims.auto_compact
+        #             — turn counter + /compact skill invocation.
+        "shim": "harnesses.shims.auto_compact",
+        "depends_on": [],
+        "applicable_harnesses": ["claude_code_go", "aider", "goose", "cline"],
+    },
+    ("claude_code_go", "memory", "ARM-M-C"): {
+        "description": (
+            "Files + structured event log + checkpoints — Cline "
+            "checkpointManager + OpenHands StateTracker. Every "
+            "action+observation logged to durable event store; checkpoints "
+            "rollback-able. docs/03 §2.5 M-3. Retrofittable on claude_code_go "
+            "via post-tool hook to ai/events/log.jsonl."
+        ),
+        "config_override": {
+            "memory.mode": "files_plus_event_log",
+            "memory.event_log": True,
+            "memory.event_log_path": "ai/events/log.jsonl",
+            "memory.checkpoints_enabled": True,
+        },
+        # TODO(shim): implement harnesses.shims.append_event_log
+        #             — post-tool hook that writes structured action/result
+        #               rows to ai/events/log.jsonl with checkpoint markers.
+        "shim": "harnesses.shims.append_event_log",
+        "depends_on": [],
+        "applicable_harnesses": ["claude_code_go", "cline", "openhands"],
+    },
+    ("claude_code_go", "memory", "ARM-M-D"): {
+        "description": (
+            "Files + LRU-indexed codebase RAG — Continue CodebaseIndexer + "
+            "opened-file LRU. Continuous embedding-index on working repo; "
+            "injects relevant chunks via retrieval per request. docs/03 §2.5 "
+            "M-4. Maps to user's CodeSight + /code-search per model turn."
+        ),
+        "config_override": {
+            "memory.mode": "files_plus_rag",
+            "memory.rag": True,
+            "memory.rag_backend": "codesight",
+            "memory.rag_on_turn": True,
+        },
+        # TODO(shim): implement harnesses.shims.codesight_rag_per_turn
+        #             — per-turn `codesight search` call, top-k chunks
+        #               injected into next prompt.
+        "shim": "harnesses.shims.codesight_rag_per_turn",
+        # Soft dep from docs/03 §3.2: pairs poorly with TC-B (static eager-load)
+        # — RAG context and eager-loaded tool schemas compete for budget.
+        "depends_on": [],
+        "applicable_harnesses": ["claude_code_go", "continue_dev"],
+    },
+    ("claude_code_go", "memory", "ARM-M-E"): {
+        "description": (
+            "Vector-only adversarial probe — replace files+git with pure "
+            "vector DB (Chroma/LanceDB). Tests the survey's striking finding "
+            "that NO mainstream harness uses vector DB as primary memory. "
+            "Expected STRONGLY NEGATIVE delta. docs/03 §2.5 M-5."
+        ),
+        "config_override": {
+            "memory.mode": "vector_only",
+            "memory.vector_only": True,
+            "memory.vector_backend": "chroma",
+            "memory.file_fallback": False,
+        },
+        # TODO(shim): implement harnesses.shims.vector_only_memory_adapter
+        #             — intercepts CLAUDE.md/MEMORY.md/ai/memory/* reads,
+        #               serves from vector store instead. NO file fallback.
+        "shim": "harnesses.shims.vector_only_memory_adapter",
+        "depends_on": [],
+        "applicable_harnesses": ["claude_code_go"],
+    },
 }
 
 
