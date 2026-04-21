@@ -451,6 +451,193 @@ ABLATION_MATRIX: dict[tuple[str, str, str], dict[str, Any]] = {
         "depends_on": [],
         "applicable_harnesses": ["claude_code_go"],
     },
+
+    # --------------------------------------------------------------------
+    # Layer 6: sub_agents  (5 arms: A-E)
+    # --------------------------------------------------------------------
+    ("claude_code_go", "sub_agents", "ARM-SA-A"): {
+        "description": (
+            "BASELINE-ALT — NONE, single agent only. Disable Task tool. "
+            "Continue + base Aider pattern. Reference for 'cost of NOT having "
+            "sub-agents'. docs/03 §2.6 SA-1."
+        ),
+        "config_override": {
+            "sub_agents.enabled": False,
+            "sub_agents.task_tool": False,
+            "sub_agents.max_parallel": 0,
+        },
+        # TODO(shim): implement harnesses.shims.strip_task_tool
+        #             — pre-tool hook denies Task; remove from allowlist.
+        "shim": "harnesses.shims.strip_task_tool",
+        "depends_on": [],
+        "applicable_harnesses": ["claude_code_go"],
+    },
+    ("claude_code_go", "sub_agents", "ARM-SA-B"): {
+        "description": (
+            "Sequential context-isolation (CONVERGENT) — standard Claude Code "
+            "Task tool. One sub-agent at a time, parent waits, sub-agent "
+            "context isolated, returns 1-2K summary. docs/03 §2.6 SA-2."
+        ),
+        "config_override": {
+            "sub_agents.enabled": True,
+            "sub_agents.task_tool": True,
+            "sub_agents.max_parallel": 1,
+            "sub_agents.context_isolation": True,
+        },
+        "shim": None,
+        "depends_on": [],
+        "applicable_harnesses": ["claude_code_go"],
+    },
+    ("claude_code_go", "sub_agents", "ARM-SA-C"): {
+        "description": (
+            "Parallel best-of-N with worktree isolation — Cursor 2 / /go wave "
+            "model. N parallel agents in git worktrees, best result selected. "
+            "docs/03 §2.6 SA-3. CRITICAL: requires verification arm V-C, V-D, "
+            "or V-E to score outputs (else 'best-of-N' = 'random-of-N')."
+        ),
+        "config_override": {
+            "sub_agents.enabled": True,
+            "sub_agents.max_parallel": 4,
+            "sub_agents.worktree_isolation": True,
+            "sub_agents.selection": "best_of_n",
+        },
+        "shim": None,
+        # Hard dep from docs/03 §3.1: SA-3 requires V-3, V-4, or V-5.
+        "depends_on": ["ARM-V-C", "ARM-V-D", "ARM-V-E"],
+        "applicable_harnesses": ["claude_code_go"],
+    },
+    ("claude_code_go", "sub_agents", "ARM-SA-D"): {
+        "description": (
+            "Specialized verification subagent — Replit Agent 3 pattern. "
+            "Implementation agent writes code; verification agent runs tests "
+            "on isolated context (no pollution). docs/03 §2.6 SA-4. Maps to "
+            "user's smoke-test + shadow-verifier per /go Phase 6/7."
+        ),
+        "config_override": {
+            "sub_agents.enabled": True,
+            "sub_agents.verify_subagent": True,
+            "sub_agents.verify_isolated_context": True,
+        },
+        "shim": None,
+        # Hard dep from docs/03 §3.1: SA-4 requires V-3, V-4, or V-5 (the
+        # subagent IS verification — pairing with V-1=none is contradiction).
+        "depends_on": ["ARM-V-C", "ARM-V-D", "ARM-V-E"],
+        "applicable_harnesses": ["claude_code_go"],
+    },
+    ("claude_code_go", "sub_agents", "ARM-SA-E"): {
+        "description": (
+            "Deep chaining (sub-sub-agents) — /go pattern where sub-agents "
+            "spawn their own sub-agents. docs/03 §2.6 SA-5. Default ON in /go "
+            "(MAX_AGENT_DEPTH=3); ablate by capping at depth=1."
+        ),
+        "config_override": {
+            "sub_agents.enabled": True,
+            "sub_agents.max_depth": 3,
+            "sub_agents.deep_chaining": True,
+        },
+        "shim": None,
+        "depends_on": [],
+        "applicable_harnesses": ["claude_code_go"],
+    },
+
+    # --------------------------------------------------------------------
+    # Layer 7: safety  (5 arms: A-E)
+    # --------------------------------------------------------------------
+    ("claude_code_go", "safety", "ARM-S-A"): {
+        "description": (
+            "Prompt-only + dry-run flag — Aider baseline. No interception. "
+            "User confirmation per write op. .aiderignore filter, dry_run "
+            "flag. docs/03 §2.7 S-1. Wrappable on claude_code_go by disabling "
+            "hooks via ~/.claude/settings.json hooks: {}."
+        ),
+        "config_override": {
+            "safety.mode": "prompt_only",
+            "safety.hooks_enabled": False,
+            "safety.dry_run_flag": True,
+            "safety.user_confirm_writes": True,
+        },
+        # TODO(shim): implement harnesses.shims.disable_all_hooks
+        #             — sets hooks: {} in settings.json for the cell run.
+        "shim": "harnesses.shims.disable_all_hooks",
+        "depends_on": [],
+        "applicable_harnesses": ["claude_code_go", "aider"],
+    },
+    ("claude_code_go", "safety", "ARM-S-B"): {
+        "description": (
+            "Per-tool policy function — Continue tool.evaluateToolCallPolicy() "
+            "per-tool single policy file. Lighter than hooks, more structured "
+            "than prompt-only. docs/03 §2.7 S-2. Shim into Claude Code via "
+            "~/.claude/policies/per-tool.json."
+        ),
+        "config_override": {
+            "safety.mode": "per_tool_policy",
+            "safety.policy_file": "~/.claude/policies/per-tool.json",
+            "safety.hooks_enabled": False,
+        },
+        # TODO(shim): implement harnesses.shims.per_tool_policy_loader
+        #             — loads single per-tool JSON policy and gates tool calls.
+        "shim": "harnesses.shims.per_tool_policy_loader",
+        "depends_on": [],
+        "applicable_harnesses": ["claude_code_go", "continue_dev"],
+    },
+    ("claude_code_go", "safety", "ARM-S-C"): {
+        "description": (
+            "BASELINE — Hooks intercept Pre/Post tool. User's harness — 68 "
+            "rules across 13 categories at zero token cost. BLOCK on "
+            "dangerous, WARN on suspicious. Per-agent allowlists. docs/03 "
+            "§2.7 S-3."
+        ),
+        "config_override": {
+            "safety.mode": "hooks_intercept",
+            "safety.hooks_enabled": True,
+            "safety.rule_count": 68,
+            "safety.rule_categories": 13,
+        },
+        "shim": None,
+        "depends_on": [],
+        "applicable_harnesses": ["claude_code_go"],
+    },
+    ("claude_code_go", "safety", "ARM-S-D"): {
+        "description": (
+            "Inspector pipeline + LLM adversary check — Goose 5-stage "
+            "inspector + AdversaryInspector LLM-based prompt-injection check. "
+            "Most paranoid setup. docs/03 §2.7 S-4. Wrappable on "
+            "claude_code_go via custom pre-tool hook calling Haiku to score "
+            "args (~$0.0005/call)."
+        ),
+        "config_override": {
+            "safety.mode": "inspector_plus_llm_adversary",
+            "safety.hooks_enabled": True,
+            "safety.llm_adversary_check": True,
+            "safety.adversary_model": "haiku",
+            "safety.adversary_cost_per_call_usd": 0.0005,
+        },
+        # TODO(shim): implement harnesses.shims.haiku_adversary_inspector
+        #             — pre-tool hook calls Claude Haiku to score args for
+        #               prompt-injection / exfil signals; BLOCK on score>0.7.
+        "shim": "harnesses.shims.haiku_adversary_inspector",
+        # Soft dep from docs/03 §3.2: S-4 pairs best with TS-B/TS-C
+        # (broad surface = more attack vectors); diminished value with TS-A.
+        "depends_on": [],
+        "applicable_harnesses": ["claude_code_go", "goose"],
+    },
+    ("claude_code_go", "safety", "ARM-S-E"): {
+        "description": (
+            "Sandbox container + runtime cap — OpenHands / Devin / Replit "
+            "pattern. Sandboxed Docker runtime + runtime cap (45min Devin, "
+            "200min Replit). docs/03 §2.7 S-5. SWAP-only — pin OpenHands "
+            "with runtime=docker."
+        ),
+        "config_override": {
+            "safety.mode": "sandbox_container",
+            "safety.runtime": "docker",
+            "safety.max_runtime_minutes": 45,
+            "safety.in_loop_intercept": False,
+        },
+        "shim": None,
+        "depends_on": [],
+        "applicable_harnesses": [],  # OpenHands-only swap cell.
+    },
 }
 
 
