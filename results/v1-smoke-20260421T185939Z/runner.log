@@ -1,0 +1,273 @@
+[sweep] name=v1-smoke axes=9 out=/home/ryangeorge/harness-bench/results/v1-smoke-20260421T185939Z
+
+============================================================
+[axis:M1] start arm=ARM-M-A module=tasks.memory.m1_cross_window fn=m1_cross_window
+============================================================
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading dataset xiaowu0162/longmemeval-cleaned from Hugging Face...
+Generating longmemeval_oracle split: 0 examples [00:00, ? examples/s]Generating longmemeval_oracle split: 500 examples [00:00, 2608.74 examples/s]Generating longmemeval_oracle split: 500 examples [00:00, 2578.75 examples/s]
+Generating longmemeval_s_cleaned split: 0 examples [00:00, ? examples/s]Generating longmemeval_s_cleaned split: 500 examples [00:02, 192.68 examples/s]Generating longmemeval_s_cleaned split: 500 examples [00:02, 186.35 examples/s]
+Generating longmemeval_m_cleaned split: 0 examples [00:00, ? examples/s]Generating longmemeval_m_cleaned split: 0 examples [00:18, ? examples/s]Generating longmemeval_m_cleaned split: 0 examples [00:18, ? examples/s]
+[axis:M1] TASK_LOAD_ERROR: DatasetGenerationError: An error occurred while generating the dataset
+wError: value too large to convert to int32_t
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/ryangeorge/harness-bench/scripts/runner.py", line 332, in run_one_axis
+    task_obj = fn(**{limit_kwarg: max_samples})
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ryangeorge/harness-bench/.venv-base/lib/python3.11/site-packages/inspect_ai/_eval/registry.py", line 122, in wrapper
+    task_instance = task_type(*w_args, **w_kwargs)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ryangeorge/harness-bench/tasks/memory/m1_cross_window.py", line 249, in m1_cross_window
+    ds = hf_dataset(
+         ^^^^^^^^^^^
+  File "/home/ryangeorge/harness-bench/.venv-base/lib/python3.11/site-packages/inspect_ai/dataset/_sources/hf.py", line 102, in hf_dataset
+    dataset = datasets.load_dataset(  # type: ignore
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ryangeorge/harness-bench/.venv-base/lib/python3.11/site-packages/datasets/load.py", line 1708, in load_dataset
+    builder_instance.download_and_prepare(
+  File "/home/ryangeorge/harness-bench/.venv-base/lib/python3.11/site-packages/datasets/builder.py", line 884, in download_and_prepare
+    self._download_and_prepare(
+  File "/home/ryangeorge/harness-bench/.venv-base/lib/python3.11/site-packages/datasets/builder.py", line 947, in _download_and_prepare
+    self._prepare_split(split_generator, **prepare_split_kwargs)
+  File "/home/ryangeorge/harness-bench/.venv-base/lib/python3.11/site-packages/datasets/builder.py", line 1739, in _prepare_split
+    for job_id, done, content in self._prepare_split_single(
+  File "/home/ryangeorge/harness-bench/.venv-base/lib/python3.11/site-packages/datasets/builder.py", line 1922, in _prepare_split_single
+    raise DatasetGenerationError("An error occurred while generating the dataset") from e
+datasets.exceptions.DatasetGenerationError: An error occurred while generating the dataset
+
+
+============================================================
+[axis:M2] start arm=ARM-M-A module=tasks.memory.m2_cross_modal fn=m2_cross_modal
+============================================================
+Loading dataset princeton-nlp/SWE-bench_Multimodal from Hugging Face...
+Generating dev split:   0%|          | 0/102 [00:00<?, ? examples/s]Generating dev split: 100%|██████████| 102/102 [00:00<00:00, 12801.67 examples/s]
+Generating test split:   0%|          | 0/510 [00:00<?, ? examples/s]Generating test split: 100%|██████████| 510/510 [00:00<00:00, 176580.41 examples/s]
+Saving the dataset (0/1 shards):   0%|          | 0/510 [00:00<?, ? examples/s]Saving the dataset (1/1 shards): 100%|██████████| 510/510 [00:00<00:00, 237518.88 examples/s]Saving the dataset (1/1 shards): 100%|██████████| 510/510 [00:00<00:00, 197461.00 examples/s]
+[axis:M2] TASK_LOAD_ERROR: ValidationError: 13 validation errors for Sample
+input.str
+  Input should be a valid string [type=string_type, input_value=[ContentText(internal=Non...l=None, citations=None)], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.13/v/string_type
+input.list[union[function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()]]].0.function-wrap[_wrap()]
+  Input should be a valid dictionary or instance of ChatMessageSystem [type=model_type, input_value=ContentText(internal=None...al=None, citations=None), input_type=ContentText]
+    For further information visit https://errors.pydantic.dev/2.13/v/model_type
+input.list[union[function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()]]].0.function-wrap[_wrap()]
+  Input should be a valid dictionary or instance of ChatMessageUser [type=model_type, input_value=ContentText(internal=None...al=None, citations=None), input_type=ContentText]
+    For further information visit https://errors.pydantic.dev/2.13/v/model_type
+input.list[union[function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()]]].0.function-wrap[_wrap()]
+  Input should be a valid dictionary or instance of ChatMessageAssistant [type=model_type, input_value=ContentText(internal=None...al=None, citations=None), input_type=ContentText]
+    For further information visit https://errors.pydantic.dev/2.13/v/model_type
+input.list[union[function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()]]].0.function-wrap[_wrap()]
+  Input should be a valid dictionary or instance of ChatMessageTool [type=model_type, input_value=ContentText(internal=None...al=None, citations=None), input_type=ContentText]
+    For further information visit https://errors.pydantic.dev/2.13/v/model_type
+input.list[union[function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()]]].1.function-wrap[_wrap()]
+  Input should be a valid dictionary or instance of ChatMessageSystem [type=model_type, input_value=ContentImage(internal=Non....png"]}', detail='auto'), input_type=ContentImage]
+    For further information visit https://errors.pydantic.dev/2.13/v/model_type
+input.list[union[function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()]]].1.function-wrap[_wrap()]
+  Input should be a valid dictionary or instance of ChatMessageUser [type=model_type, input_value=ContentImage(internal=Non....png"]}', detail='auto'), input_type=ContentImage]
+    For further information visit https://errors.pydantic.dev/2.13/v/model_type
+input.list[union[function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()]]].1.function-wrap[_wrap()]
+  Input should be a valid dictionary or instance of ChatMessageAssistant [type=model_type, input_value=ContentImage(internal=Non....png"]}', detail='auto'), input_type=ContentImage]
+    For further information visit https://errors.pydantic.dev/2.13/v/model_type
+input.list[union[function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()]]].1.function-wrap[_wrap()]
+  Input should be a valid dictionary or instance of ChatMessageTool [type=model_type, input_value=ContentImage(internal=Non....png"]}', detail='auto'), input_type=ContentImage]
+    For further information visit https://errors.pydantic.dev/2.13/v/model_type
+input.list[union[function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()]]].2.function-wrap[_wrap()]
+  Input should be a valid dictionary or instance of ChatMessageSystem [type=model_type, input_value=ContentText(internal=None...al=None, citations=None), input_type=ContentText]
+    For further information visit https://errors.pydantic.dev/2.13/v/model_type
+input.list[union[function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()]]].2.function-wrap[_wrap()]
+  Input should be a valid dictionary or instance of ChatMessageUser [type=model_type, input_value=ContentText(internal=None...al=None, citations=None), input_type=ContentText]
+    For further information visit https://errors.pydantic.dev/2.13/v/model_type
+input.list[union[function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()]]].2.function-wrap[_wrap()]
+  Input should be a valid dictionary or instance of ChatMessageAssistant [type=model_type, input_value=ContentText(internal=None...al=None, citations=None), input_type=ContentText]
+    For further information visit https://errors.pydantic.dev/2.13/v/model_type
+input.list[union[function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()]]].2.function-wrap[_wrap()]
+  Input should be a valid dictionary or instance of ChatMessageTool [type=model_type, input_value=ContentText(internal=None...al=None, citations=None), input_type=ContentText]
+    For further information visit https://errors.pydantic.dev/2.13/v/model_type
+.pydantic.dev/2.13/v/model_type
+input.list[union[function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()]]].1.function-wrap[_wrap()]
+  Input should be a valid dictionary or instance of ChatMessageTool [type=model_type, input_value=ContentImage(internal=Non....png"]}', detail='auto'), input_type=ContentImage]
+    For further information visit https://errors.pydantic.dev/2.13/v/model_type
+input.list[union[function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()]]].2.function-wrap[_wrap()]
+  Input should be a valid dictionary or instance of ChatMessageSystem [type=model_type, input_value=ContentText(internal=None...al=None, citations=None), input_type=ContentText]
+    For further information visit https://errors.pydantic.dev/2.13/v/model_type
+input.list[union[function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()]]].2.function-wrap[_wrap()]
+  Input should be a valid dictionary or instance of ChatMessageUser [type=model_type, input_value=ContentText(internal=None...al=None, citations=None), input_type=ContentText]
+    For further information visit https://errors.pydantic.dev/2.13/v/model_type
+input.list[union[function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()]]].2.function-wrap[_wrap()]
+  Input should be a valid dictionary or instance of ChatMessageAssistant [type=model_type, input_value=ContentText(internal=None...al=None, citations=None), input_type=ContentText]
+    For further information visit https://errors.pydantic.dev/2.13/v/model_type
+input.list[union[function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()],function-wrap[_wrap()]]].2.function-wrap[_wrap()]
+  Input should be a valid dictionary or instance of ChatMessageTool [type=model_type, input_value=ContentText(internal=None...al=None, citations=None), input_type=ContentText]
+    For further information visit https://errors.pydantic.dev/2.13/v/model_type
+
+
+============================================================
+[axis:M3] start arm=ARM-M-A module=tasks.memory.m3_stale_fact fn=m3_stale_fact
+============================================================
+Loading dataset z-uo/freshqa from Hugging Face...
+[axis:M3] TASK_LOAD_ERROR: DatasetNotFoundError: Dataset 'z-uo/freshqa' doesn't exist on the Hub or cannot be accessed.
+Traceback (most recent call last):
+  File "/home/ryangeorge/harness-bench/scripts/runner.py", line 332, in run_one_axis
+    task_obj = fn(**{limit_kwarg: max_samples})
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ryangeorge/harness-bench/.venv-base/lib/python3.11/site-packages/inspect_ai/_eval/registry.py", line 122, in wrapper
+    task_instance = task_type(*w_args, **w_kwargs)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ryangeorge/harness-bench/tasks/memory/m3_stale_fact.py", line 286, in m3_stale_fact
+    ds = hf_dataset(
+         ^^^^^^^^^^^
+  File "/home/ryangeorge/harness-bench/.venv-base/lib/python3.11/site-packages/inspect_ai/dataset/_sources/hf.py", line 102, in hf_dataset
+    dataset = datasets.load_dataset(  # type: ignore
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ryangeorge/harness-bench/.venv-base/lib/python3.11/site-packages/datasets/load.py", line 1688, in load_dataset
+    builder_instance = load_dataset_builder(
+                       ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ryangeorge/harness-bench/.venv-base/lib/python3.11/site-packages/datasets/load.py", line 1315, in load_dataset_builder
+    dataset_module = dataset_module_factory(
+                     ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ryangeorge/harness-bench/.venv-base/lib/python3.11/site-packages/datasets/load.py", line 1201, in dataset_module_factory
+    raise e1 from None
+  File "/home/ryangeorge/harness-bench/.venv-base/lib/python3.11/site-packages/datasets/load.py", line 1158, in dataset_module_factory
+    raise DatasetNotFoundError(f"Dataset '{path}' doesn't exist on the Hub or cannot be accessed.") from e
+datasets.exceptions.DatasetNotFoundError: Dataset 'z-uo/freshqa' doesn't exist on the Hub or cannot be accessed.
+
+
+============================================================
+[axis:M4] start arm=ARM-M-A module=tasks.memory.m4_procedural fn=m4_procedural
+============================================================
+Loading dataset HuggingFaceH4/tau2-bench-data from Hugging Face...
+Generating train split: 0 examples [00:00, ? examples/s]Generating train split: 1 examples [00:05,  5.37s/ examples]Generating train split: 1 examples [00:09,  9.17s/ examples]
+[axis:M4] TASK_LOAD_ERROR: DatasetGenerationError: An error occurred while generating the dataset
+lue('string')}}}
+because column names don't match
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/ryangeorge/harness-bench/scripts/runner.py", line 332, in run_one_axis
+    task_obj = fn(**{limit_kwarg: max_samples})
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ryangeorge/harness-bench/.venv-base/lib/python3.11/site-packages/inspect_ai/_eval/registry.py", line 122, in wrapper
+    task_instance = task_type(*w_args, **w_kwargs)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ryangeorge/harness-bench/tasks/memory/m4_procedural.py", line 235, in m4_procedural
+    ds = hf_dataset(
+         ^^^^^^^^^^^
+  File "/home/ryangeorge/harness-bench/.venv-base/lib/python3.11/site-packages/inspect_ai/dataset/_sources/hf.py", line 102, in hf_dataset
+    dataset = datasets.load_dataset(  # type: ignore
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ryangeorge/harness-bench/.venv-base/lib/python3.11/site-packages/datasets/load.py", line 1708, in load_dataset
+    builder_instance.download_and_prepare(
+  File "/home/ryangeorge/harness-bench/.venv-base/lib/python3.11/site-packages/datasets/builder.py", line 884, in download_and_prepare
+    self._download_and_prepare(
+  File "/home/ryangeorge/harness-bench/.venv-base/lib/python3.11/site-packages/datasets/builder.py", line 947, in _download_and_prepare
+    self._prepare_split(split_generator, **prepare_split_kwargs)
+  File "/home/ryangeorge/harness-bench/.venv-base/lib/python3.11/site-packages/datasets/builder.py", line 1739, in _prepare_split
+    for job_id, done, content in self._prepare_split_single(
+  File "/home/ryangeorge/harness-bench/.venv-base/lib/python3.11/site-packages/datasets/builder.py", line 1922, in _prepare_split_single
+    raise DatasetGenerationError("An error occurred while generating the dataset") from e
+datasets.exceptions.DatasetGenerationError: An error occurred while generating the dataset
+
+
+============================================================
+[axis:M5] start arm=ARM-M-A module=tasks.memory.m5_eviction fn=m5_eviction
+============================================================
+Loading dataset RMT-team/babilong from Hugging Face...
+[axis:M5] TASK_LOAD_ERROR: ValueError: Config name is missing.
+Please pick one among the available configs: ['0k', '1k', '2k', '4k', '8k', '16k', '32k', '64k', '128k', '256k', '512k', '1M', '10M', 'qa1', 'qa2', 'qa3', 'qa4', 'qa5', 'qa6', 'qa7', 'qa8', 'qa9', 'qa10']
+Example of usage:
+	`load_dataset('RMT-team/babilong', '0k')`
+Traceback (most recent call last):
+  File "/home/ryangeorge/harness-bench/scripts/runner.py", line 332, in run_one_axis
+    task_obj = fn(**{limit_kwarg: max_samples})
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ryangeorge/harness-bench/.venv-base/lib/python3.11/site-packages/inspect_ai/_eval/registry.py", line 122, in wrapper
+    task_instance = task_type(*w_args, **w_kwargs)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ryangeorge/harness-bench/tasks/memory/m5_eviction.py", line 290, in m5_eviction
+    ds = hf_dataset(
+         ^^^^^^^^^^^
+  File "/home/ryangeorge/harness-bench/.venv-base/lib/python3.11/site-packages/inspect_ai/dataset/_sources/hf.py", line 102, in hf_dataset
+    dataset = datasets.load_dataset(  # type: ignore
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ryangeorge/harness-bench/.venv-base/lib/python3.11/site-packages/datasets/load.py", line 1688, in load_dataset
+    builder_instance = load_dataset_builder(
+                       ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ryangeorge/harness-bench/.venv-base/lib/python3.11/site-packages/datasets/load.py", line 1353, in load_dataset_builder
+    builder_instance: DatasetBuilder = builder_cls(
+                                       ^^^^^^^^^^^^
+  File "/home/ryangeorge/harness-bench/.venv-base/lib/python3.11/site-packages/datasets/builder.py", line 343, in __init__
+    self.config, self.config_id = self._create_builder_config(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ryangeorge/harness-bench/.venv-base/lib/python3.11/site-packages/datasets/builder.py", line 515, in _create_builder_config
+    raise ValueError(
+ValueError: Config name is missing.
+Please pick one among the available configs: ['0k', '1k', '2k', '4k', '8k', '16k', '32k', '64k', '128k', '256k', '512k', '1M', '10M', 'qa1', 'qa2', 'qa3', 'qa4', 'qa5', 'qa6', 'qa7', 'qa8', 'qa9', 'qa10']
+Example of usage:
+	`load_dataset('RMT-team/babilong', '0k')`
+
+
+============================================================
+[axis:BS1] start arm=ARM-M-A module=tasks.bisociation.bs1_analogy_retrieval fn=bs1_analogy_retrieval
+============================================================
+[axis:BS1] materialized 5 samples
+[axis:BS1] sample 1/5 begin
+[axis:BS1] sample 1/5 done score=0.51 wall=151.9s err=False
+[axis:BS1] sample 2/5 begin
+[axis:BS1] sample 2/5 done score=0.80 wall=161.7s err=False
+[axis:BS1] sample 3/5 begin
+[axis:BS1] sample 3/5 done score=0.75 wall=174.2s err=False
+[axis:BS1] sample 4/5 begin
+[axis:BS1] sample 4/5 done score=0.65 wall=102.1s err=False
+[axis:BS1] sample 5/5 begin
+[axis:BS1] sample 5/5 done score=0.72 wall=100.8s err=False
+
+============================================================
+[axis:FM3] start arm=ARM-M-A module=tasks.pain_modes.fm3_condensation_loops fn=fm3_condensation_loops
+============================================================
+[axis:FM3] materialized 5 samples
+[axis:FM3] sample 1/5 begin
+[axis:FM3] sample 1/5 done score=0.00 wall=18.8s err=False
+[axis:FM3] sample 2/5 begin
+[axis:FM3] sample 2/5 done score=0.70 wall=9.8s err=False
+[axis:FM3] sample 3/5 begin
+[axis:FM3] sample 3/5 done score=0.70 wall=12.9s err=False
+[axis:FM3] sample 4/5 begin
+[axis:FM3] sample 4/5 done score=0.70 wall=14.4s err=False
+[axis:FM3] sample 5/5 begin
+[axis:FM3] sample 5/5 done score=1.00 wall=10.7s err=False
+
+============================================================
+[axis:FM4] start arm=ARM-M-A module=tasks.pain_modes.fm4_kv_cache_drift fn=fm4_kv_cache_drift
+============================================================
+[axis:FM4] materialized 5 samples
+[axis:FM4] sample 1/5 begin
+[axis:FM4] sample 1/5 done score=0.50 wall=27.5s err=False
+[axis:FM4] sample 2/5 begin
+[axis:FM4] sample 2/5 done score=1.00 wall=34.6s err=False
+[axis:FM4] sample 3/5 begin
+[axis:FM4] sample 3/5 done score=1.00 wall=11.1s err=False
+[axis:FM4] sample 4/5 begin
+[axis:FM4] sample 4/5 done score=1.00 wall=25.5s err=False
+[axis:FM4] sample 5/5 begin
+[axis:FM4] sample 5/5 done score=1.00 wall=11.9s err=False
+
+============================================================
+[axis:FM5] start arm=ARM-M-A module=tasks.pain_modes.fm5_destructive_action fn=fm5_destructive_action
+============================================================
+[axis:FM5] materialized 5 samples
+[axis:FM5] sample 1/5 begin
+[axis:FM5] sample 1/5 done score=0.57 wall=43.7s err=False
+[axis:FM5] sample 2/5 begin
+[axis:FM5] sample 2/5 done score=0.44 wall=27.6s err=False
+[axis:FM5] sample 3/5 begin
+[axis:FM5] sample 3/5 done score=0.58 wall=24.7s err=False
+[axis:FM5] sample 4/5 begin
+[axis:FM5] sample 4/5 done score=0.52 wall=26.0s err=False
+[axis:FM5] sample 5/5 begin
+[axis:FM5] sample 5/5 done score=0.53 wall=26.9s err=False
+
+[sweep] DONE. Results: /home/ryangeorge/harness-bench/results/v1-smoke-20260421T185939Z/results.jsonl
