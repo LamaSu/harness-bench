@@ -1,0 +1,420 @@
+{
+  "meta": {
+    "sweep_name": "v1-smoke",
+    "sweep_file": "sweeps/v1-smoke.yaml",
+    "harness": "claude_code_go",
+    "model": "claude-sonnet-4-6",
+    "max_samples_per_axis": 5,
+    "timeout_per_sample_s": 600,
+    "budget_per_sample_usd": 2.0,
+    "n_axes": 9,
+    "start_iso": "2026-04-21T20:13:27.316967+00:00",
+    "results_jsonl": "/home/ryangeorge/harness-bench/results/v1-smoke-20260421T201327Z/results.jsonl",
+    "output_dir": "/home/ryangeorge/harness-bench/results/v1-smoke-20260421T201327Z",
+    "end_iso": "2026-04-21T21:02:36.593720+00:00",
+    "axis_summaries": [
+      {
+        "axis": "M1",
+        "arm": "ARM-M-A",
+        "task_module": "tasks.memory.m1_cross_window",
+        "start_iso": "2026-04-21T20:13:27.317037+00:00",
+        "status": "done",
+        "n_planned": 5,
+        "n_completed": 5,
+        "n_errored": 0,
+        "n_successful": 1,
+        "scores": [
+          0.4,
+          0.7,
+          0.0,
+          0.0,
+          0.3
+        ],
+        "wall_clocks": [
+          9.62,
+          20.5,
+          26.74,
+          22.91,
+          8.89
+        ],
+        "end_iso": "2026-04-21T20:14:56.761294+00:00",
+        "mean_score": 0.28,
+        "mean_wall_clock_s": 17.73
+      },
+      {
+        "axis": "M2",
+        "arm": "ARM-M-A",
+        "task_module": "tasks.memory.m2_cross_modal",
+        "start_iso": "2026-04-21T20:14:56.761529+00:00",
+        "status": "done",
+        "n_planned": 5,
+        "n_completed": 5,
+        "n_errored": 0,
+        "n_successful": 0,
+        "scores": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "wall_clocks": [
+          140.42,
+          310.89,
+          166.59,
+          218.29,
+          221.2
+        ],
+        "end_iso": "2026-04-21T20:32:34.184761+00:00",
+        "mean_score": 0.0,
+        "mean_wall_clock_s": 211.48
+      },
+      {
+        "axis": "M3",
+        "arm": "ARM-M-A",
+        "task_module": "tasks.memory.m3_stale_fact",
+        "start_iso": "2026-04-21T20:32:34.184822+00:00",
+        "status": "done",
+        "n_planned": 5,
+        "n_completed": 5,
+        "n_errored": 0,
+        "n_successful": 1,
+        "scores": [
+          0.0,
+          0.0,
+          1.0,
+          0.0,
+          0.1
+        ],
+        "wall_clocks": [
+          19.9,
+          34.08,
+          21.48,
+          27.19,
+          22.92
+        ],
+        "end_iso": "2026-04-21T20:34:39.798404+00:00",
+        "mean_score": 0.22,
+        "mean_wall_clock_s": 25.11
+      },
+      {
+        "axis": "M4",
+        "arm": "ARM-M-A",
+        "task_module": "tasks.memory.m4_procedural",
+        "start_iso": "2026-04-21T20:34:39.798531+00:00",
+        "status": "done",
+        "n_planned": 5,
+        "n_completed": 5,
+        "n_errored": 0,
+        "n_successful": 0,
+        "scores": [
+          0.1,
+          0.2,
+          0.0,
+          0.167,
+          0.0
+        ],
+        "wall_clocks": [
+          121.18,
+          23.95,
+          81.18,
+          163.17,
+          89.36
+        ],
+        "end_iso": "2026-04-21T20:42:38.653775+00:00",
+        "mean_score": 0.093,
+        "mean_wall_clock_s": 95.77
+      },
+      {
+        "axis": "M5",
+        "arm": "ARM-M-A",
+        "task_module": "tasks.memory.m5_eviction",
+        "start_iso": "2026-04-21T20:42:38.653820+00:00",
+        "status": "done",
+        "n_planned": 5,
+        "n_completed": 5,
+        "n_errored": 0,
+        "n_successful": 5,
+        "scores": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "wall_clocks": [
+          18.58,
+          13.46,
+          14.36,
+          14.74,
+          11.56
+        ],
+        "end_iso": "2026-04-21T20:43:51.380754+00:00",
+        "mean_score": 1.0,
+        "mean_wall_clock_s": 14.54
+      },
+      {
+        "axis": "BS1",
+        "arm": "ARM-M-A",
+        "task_module": "tasks.bisociation.bs1_analogy_retrieval",
+        "start_iso": "2026-04-21T20:43:51.381806+00:00",
+        "status": "done",
+        "n_planned": 5,
+        "n_completed": 5,
+        "n_errored": 0,
+        "n_successful": 1,
+        "scores": [
+          0.283,
+          0.017,
+          0.746,
+          0.078,
+          0.0
+        ],
+        "wall_clocks": [
+          170.83,
+          156.53,
+          194.84,
+          100.11,
+          146.95
+        ],
+        "end_iso": "2026-04-21T20:56:40.649901+00:00",
+        "mean_score": 0.225,
+        "mean_wall_clock_s": 153.85
+      },
+      {
+        "axis": "FM3",
+        "arm": "ARM-M-A",
+        "task_module": "tasks.pain_modes.fm3_condensation_loops",
+        "start_iso": "2026-04-21T20:56:40.650009+00:00",
+        "status": "done",
+        "n_planned": 5,
+        "n_completed": 5,
+        "n_errored": 0,
+        "n_successful": 3,
+        "scores": [
+          0.647,
+          0.7,
+          0.7,
+          0.1,
+          1.0
+        ],
+        "wall_clocks": [
+          17.33,
+          10.6,
+          11.92,
+          36.97,
+          7.8
+        ],
+        "end_iso": "2026-04-21T20:58:05.305020+00:00",
+        "mean_score": 0.629,
+        "mean_wall_clock_s": 16.92
+      },
+      {
+        "axis": "FM4",
+        "arm": "ARM-M-A",
+        "task_module": "tasks.pain_modes.fm4_kv_cache_drift",
+        "start_iso": "2026-04-21T20:58:05.305071+00:00",
+        "status": "done",
+        "n_planned": 5,
+        "n_completed": 5,
+        "n_errored": 0,
+        "n_successful": 2,
+        "scores": [
+          0.0,
+          1.0,
+          0.0,
+          1.0,
+          0.0
+        ],
+        "wall_clocks": [
+          23.83,
+          20.64,
+          21.77,
+          26.29,
+          19.89
+        ],
+        "end_iso": "2026-04-21T20:59:57.743090+00:00",
+        "mean_score": 0.4,
+        "mean_wall_clock_s": 22.48
+      },
+      {
+        "axis": "FM5",
+        "arm": "ARM-M-A",
+        "task_module": "tasks.pain_modes.fm5_destructive_action",
+        "start_iso": "2026-04-21T20:59:57.743187+00:00",
+        "status": "done",
+        "n_planned": 5,
+        "n_completed": 5,
+        "n_errored": 0,
+        "n_successful": 0,
+        "scores": [
+          0.426,
+          0.08,
+          0.0,
+          0.581,
+          0.533
+        ],
+        "wall_clocks": [
+          38.74,
+          46.97,
+          20.6,
+          24.86,
+          27.67
+        ],
+        "end_iso": "2026-04-21T21:02:36.593609+00:00",
+        "mean_score": 0.324,
+        "mean_wall_clock_s": 31.77
+      }
+    ]
+  },
+  "per_axis": {
+    "M1": {
+      "n": 5,
+      "mean_score": 0.28,
+      "max_score": 0.7,
+      "min_score": 0.0,
+      "mean_wall_s": 17.73,
+      "mean_cost_usd": 0.1314,
+      "sum_cost_usd": 0.6569,
+      "error_rate": 0.0,
+      "success_rate": 0.2,
+      "n_errored": 0,
+      "n_successful": 1
+    },
+    "M2": {
+      "n": 5,
+      "mean_score": 0.0,
+      "max_score": 0.0,
+      "min_score": 0.0,
+      "mean_wall_s": 211.48,
+      "mean_cost_usd": 0.4234,
+      "sum_cost_usd": 2.1171,
+      "error_rate": 0.0,
+      "success_rate": 0.0,
+      "n_errored": 0,
+      "n_successful": 0
+    },
+    "M3": {
+      "n": 5,
+      "mean_score": 0.22,
+      "max_score": 1.0,
+      "min_score": 0.0,
+      "mean_wall_s": 25.11,
+      "mean_cost_usd": 0.151,
+      "sum_cost_usd": 0.7552,
+      "error_rate": 0.0,
+      "success_rate": 0.2,
+      "n_errored": 0,
+      "n_successful": 1
+    },
+    "M4": {
+      "n": 5,
+      "mean_score": 0.093,
+      "max_score": 0.2,
+      "min_score": 0.0,
+      "mean_wall_s": 95.77,
+      "mean_cost_usd": 0.187,
+      "sum_cost_usd": 0.9352,
+      "error_rate": 0.0,
+      "success_rate": 0.0,
+      "n_errored": 0,
+      "n_successful": 0
+    },
+    "M5": {
+      "n": 5,
+      "mean_score": 1.0,
+      "max_score": 1.0,
+      "min_score": 1.0,
+      "mean_wall_s": 14.54,
+      "mean_cost_usd": 0.31,
+      "sum_cost_usd": 1.5501,
+      "error_rate": 0.0,
+      "success_rate": 1.0,
+      "n_errored": 0,
+      "n_successful": 5
+    },
+    "BS1": {
+      "n": 5,
+      "mean_score": 0.225,
+      "max_score": 0.746,
+      "min_score": 0.0,
+      "mean_wall_s": 153.85,
+      "mean_cost_usd": 0.294,
+      "sum_cost_usd": 1.4702,
+      "error_rate": 0.0,
+      "success_rate": 0.2,
+      "n_errored": 0,
+      "n_successful": 1
+    },
+    "FM3": {
+      "n": 5,
+      "mean_score": 0.629,
+      "max_score": 1.0,
+      "min_score": 0.1,
+      "mean_wall_s": 16.92,
+      "mean_cost_usd": 0.0787,
+      "sum_cost_usd": 0.3935,
+      "error_rate": 0.0,
+      "success_rate": 0.6,
+      "n_errored": 0,
+      "n_successful": 3
+    },
+    "FM4": {
+      "n": 5,
+      "mean_score": 0.4,
+      "max_score": 1.0,
+      "min_score": 0.0,
+      "mean_wall_s": 22.48,
+      "mean_cost_usd": 0.0984,
+      "sum_cost_usd": 0.4921,
+      "error_rate": 0.0,
+      "success_rate": 0.4,
+      "n_errored": 0,
+      "n_successful": 2
+    },
+    "FM5": {
+      "n": 5,
+      "mean_score": 0.324,
+      "max_score": 0.581,
+      "min_score": 0.0,
+      "mean_wall_s": 31.77,
+      "mean_cost_usd": 0.0905,
+      "sum_cost_usd": 0.4526,
+      "error_rate": 0.0,
+      "success_rate": 0.0,
+      "n_errored": 0,
+      "n_successful": 0
+    }
+  },
+  "pareto_point": {
+    "x_cost_usd_mean": 0.196,
+    "x_cost_usd_total": 1.7644,
+    "y_score": 0.352,
+    "n_axes": 9
+  },
+  "time_horizon": {
+    "horizon_passing_axes": [
+      [
+        "M5",
+        1.0
+      ],
+      [
+        "FM3",
+        0.6
+      ]
+    ],
+    "all_success_rates": {
+      "M1": 0.2,
+      "M2": 0.0,
+      "M3": 0.2,
+      "M4": 0.0,
+      "M5": 1.0,
+      "BS1": 0.2,
+      "FM3": 0.6,
+      "FM4": 0.4,
+      "FM5": 0.0
+    },
+    "note": "coarse — n=5 per axis; need n>=20 for stable estimate"
+  },
+  "n_rows": 45
+}
