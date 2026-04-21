@@ -13,10 +13,10 @@ This is the ONLY way the runner injects ARMs. Tasks never see component
 config — they see a plain Harness interface.
 
 Spec: docs/04-bench-spec.md §3 (Harness adapter interface) + §5 (Runner).
-Status: STUB — to be implemented by next agent.
 """
 from __future__ import annotations
 
+import importlib
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -758,27 +758,75 @@ def get_arm_config(harness: str, layer: str, arm_id: str) -> dict[str, Any]:
     return ABLATION_MATRIX[key]
 
 
+def _normalize_harness_name(name: str) -> str:
+    """Normalize harness.name to the ABLATION_MATRIX key format.
+
+    Base-harness ``name`` fields use hyphens ("claude-code-go") but the
+    matrix keys use underscores ("claude_code_go"). Normalize to the
+    matrix form so lookups always succeed.
+    """
+    return (name or "").replace("-", "_")
+
+
+def _load_shim_callable(dotted: str):
+    """Import ``dotted`` as ``module.callable`` and return it."""
+    if "." not in dotted:
+        raise ValueError(f"shim path must be dotted (got {dotted!r})")
+    module_path, _, func_name = dotted.rpartition(".")
+    module = importlib.import_module(module_path)
+    try:
+        return getattr(module, func_name)
+    except AttributeError as exc:
+        raise ImportError(
+            f"module {module_path!r} has no attribute {func_name!r}"
+        ) from exc
+
+
 class ComponentAblationHarness(Harness):
     """Decorator harness that injects component ARMs.
 
     Usage:
         base = ClaudeCodeGoHarness()
         wrapped = ComponentAblationHarness(base)
-        wrapped.set_component("memory", "ARM-M-A")
-        wrapped.set_component("verification", "ARM-V-D")
+        wrapped.apply_arm("memory", "ARM-M-C")
+        wrapped.apply_arm("verification", "ARM-V-C")
         async for evt in wrapped.submit_task(prompt, tools):
             ...
+        wrapped.teardown_all()
 
-    All other methods delegate transparently to `base`.
+    Lifecycle:
+        1. ``apply_arm(layer, arm)`` — validates matrix + depends_on,
+           applies config override via base.set_component (when the base
+           supports it), then optionally runs the shim factory to monkey-
+           patch whatever the base can't express natively. Handles are
+           stored per-layer for reverse-order teardown.
+        2. ``submit_task`` — streams events with
+           ``event.payload["arm.<layer>"] = arm`` tags.
+        3. ``teardown_all()`` — unwind shims in reverse order. Idempotent.
+
+    ``set_component`` is retained for Harness-ABC compatibility and
+    forwards to ``apply_arm``.
     """
 
     def __init__(self, base: Harness) -> None:
+        # We intentionally skip super().__init__ because we're a decorator,
+        # not an independent Harness instance.
         self.base = base
+        self.model = base.model
         self.name = f"{base.name}+components"
+        self._initialized = False
+        self._arms: dict[str, str] = dict(getattr(base, "_arms", {}) or {})
         self._active_arms: dict[str, str] = {}
+        # Ordered list of (layer, arm_id, ShimHandle) so teardown reverses apply.
+        self._shim_handles: list[tuple[str, str, Any]] = []
+
+    # ------------------------------------------------------------------
+    # Delegation
+    # ------------------------------------------------------------------
 
     def initialize(self, sandbox: Any) -> None:
         self.base.initialize(sandbox)
+        self._initialized = True
 
     async def submit_task(
         self,
@@ -786,6 +834,8 @@ class ComponentAblationHarness(Harness):
         tools: list[Tool],
     ) -> AsyncIterator[Event]:
         async for event in self.base.submit_task(prompt, tools):
+            # Tag event with every currently-active arm so OTLP spans +
+            # scorers can attribute behavior. Per docs/04-bench-spec.md §5.3.
             for layer, arm in self._active_arms.items():
                 event.payload[f"arm.{layer}"] = arm
             yield event
@@ -797,31 +847,117 @@ class ComponentAblationHarness(Harness):
         return self.base.get_wall_clock()
 
     def supports_component_ablation(self, layer: str) -> bool:
-        # Honor the union of base-supported layers AND matrix-known shimmed layers.
+        # Honor the union of base-supported layers AND matrix-known shimmed
+        # layers. Normalized name so hyphen/underscore mismatch doesn't bite.
         if self.base.supports_component_ablation(layer):
             return True
+        norm = _normalize_harness_name(self.base.name)
         return any(
-            (h, l, _) for (h, l, _) in ABLATION_MATRIX.keys()
-            if h == self.base.name and l == layer
+            h == norm and l == layer
+            for (h, l, _) in ABLATION_MATRIX.keys()
         )
 
-    def set_component(self, layer: str, arm: str) -> None:
-        key = (self.base.name, layer, arm)
-        if key not in ABLATION_MATRIX and not self.base.supports_component_ablation(layer):
+    # ------------------------------------------------------------------
+    # Ablation controls
+    # ------------------------------------------------------------------
+
+    def apply_arm(self, layer: str, arm_id: str) -> None:
+        """Apply ``(layer, arm_id)`` — config override + optional shim.
+
+        :raises UnsupportedAblationError: if the (harness, layer, arm) is
+            not in the matrix, or the arm is swap-only (empty
+            ``applicable_harnesses``), or ``depends_on`` isn't satisfied.
+        """
+        norm = _normalize_harness_name(self.base.name)
+        key = (norm, layer, arm_id)
+        if key not in ABLATION_MATRIX:
+            raise UnsupportedAblationError(self.base.name, layer, arm_id)
+        entry = ABLATION_MATRIX[key]
+
+        # Swap-only arm: applicable_harnesses empty means the arm can only
+        # run by swapping to a different harness binary. The runner must
+        # handle this at the cell-planner level, not via our wrapper.
+        applicable = entry.get("applicable_harnesses") or []
+        if not applicable:
             raise UnsupportedAblationError(
-                f"({self.base.name}, {layer}, {arm}) not in ABLATION_MATRIX "
-                "and base harness does not support this layer; "
-                "see docs/03-component-ablation.md"
+                self.base.name,
+                layer,
+                f"{arm_id} (swap-only: "
+                "requires a different harness binary, see docs/03 §6.1)",
             )
+        # Also reject if this specific harness isn't in the applicable list.
+        if norm not in {a.replace("-", "_") for a in applicable}:
+            raise UnsupportedAblationError(
+                self.base.name,
+                layer,
+                f"{arm_id} (applicable={applicable})",
+            )
+
+        # Enforce depends_on: at least one of the dep IDs must already be
+        # in our active_arms set. depends_on is a list of alternatives —
+        # any one satisfies. (docs/03 §3.1 "hard" deps.)
+        deps = entry.get("depends_on") or []
+        if deps:
+            active_arm_ids = set(self._active_arms.values())
+            if not (set(deps) & active_arm_ids):
+                raise UnsupportedAblationError(
+                    self.base.name,
+                    layer,
+                    f"{arm_id} depends on one of {deps}; "
+                    f"active arms are {sorted(active_arm_ids)}",
+                )
+
+        # Apply config_override via base.set_component when the base says
+        # it supports the layer. Some layers are recorded as "supported"
+        # by the base but the actual arm logic lives in the shim — that's
+        # fine: set_component just records the arm id in self._arms.
         if self.base.supports_component_ablation(layer):
-            self.base.set_component(layer, arm)
-        else:
-            # Shim path — load the shimmed callable from the matrix entry.
-            raise NotImplementedError(
-                f"harnesses/components.py:set_component shim for {key} "
-                "— see docs/03-component-ablation.md"
-            )
-        self._active_arms[layer] = arm
+            try:
+                self.base.set_component(layer, arm_id)
+            except NotImplementedError:
+                # Base class supports the layer in principle but doesn't
+                # have full logic yet — we still want to proceed to shim.
+                pass
+
+        # Apply shim, if any.
+        shim_path = entry.get("shim")
+        if shim_path:
+            factory = _load_shim_callable(shim_path)
+            handle = factory(self.base, arm_id)
+            handle.apply()
+            self._shim_handles.append((layer, arm_id, handle))
+
+        self._active_arms[layer] = arm_id
+
+    def teardown_all(self) -> None:
+        """Reverse every applied shim in LIFO order. Idempotent."""
+        errors: list[Exception] = []
+        while self._shim_handles:
+            layer, arm_id, handle = self._shim_handles.pop()
+            try:
+                handle.teardown()
+            except Exception as exc:  # noqa: BLE001 — best-effort cleanup
+                errors.append(exc)
+        self._active_arms.clear()
+        if errors:
+            # Re-raise the first; the rest are chained via __context__.
+            raise errors[0]
+
+    def set_component(self, layer: str, arm: str) -> None:
+        """Harness-ABC compatibility shim: forwards to apply_arm.
+
+        :raises UnsupportedAblationError: if the triple isn't in the matrix.
+        """
+        self.apply_arm(layer, arm)
+
+    # ------------------------------------------------------------------
+    # Introspection
+    # ------------------------------------------------------------------
+
+    @property
+    def active_arms(self) -> dict[str, str]:
+        """Current layer → arm_id mapping (read-only copy)."""
+        return dict(self._active_arms)
 
 
 __all__ = [
