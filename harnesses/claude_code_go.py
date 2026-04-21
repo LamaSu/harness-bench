@@ -418,14 +418,19 @@ class ClaudeCodeGoHarness(Harness):
                 if not isinstance(block, dict):
                     continue
                 if block.get("type") == "tool_result":
+                    # tool_use_result may be a dict (structured stdout/stderr)
+                    # or a plain string (many CLI tools emit raw text). Only
+                    # call .get() when we know it's a dict.
+                    tur = parsed.get("tool_use_result")
+                    tur_dict = tur if isinstance(tur, dict) else {}
                     return Event(
                         kind="tool_result",
                         payload={
                             "tool_use_id": block.get("tool_use_id"),
                             "is_error": bool(block.get("is_error")),
                             "content": block.get("content"),
-                            "stdout": (parsed.get("tool_use_result") or {}).get("stdout"),
-                            "stderr": (parsed.get("tool_use_result") or {}).get("stderr"),
+                            "stdout": tur_dict.get("stdout") if tur_dict else (tur if isinstance(tur, str) else None),
+                            "stderr": tur_dict.get("stderr"),
                             "session_id": parsed.get("session_id"),
                             "uuid": parsed.get("uuid"),
                         },
