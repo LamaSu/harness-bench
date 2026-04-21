@@ -54,8 +54,23 @@ except ImportError:  # pragma: no cover
         return fn
 
 # Substituting AppWorld (git-only, no HF mirror) with tau2-bench (HF-resident, MIT).
+# `HuggingFaceH4/tau2-bench-data` has no parquet shards — the real data is a
+# tree of per-domain `domains/<name>/tasks.json` files. `load_dataset` stalls
+# ("generating train split: 1 example") when asked to infer shards. Fix: pin
+# a specific domain via data_files + split="train" (the only split present).
 TAU2_HF_ID = "HuggingFaceH4/tau2-bench-data"
-TAU2_DEFAULT_SPLIT = "test"
+TAU2_DEFAULT_SPLIT = "train"
+TAU2_AVAILABLE_DOMAINS: tuple[str, ...] = ("airline", "retail", "telecom", "mock")
+TAU2_DEFAULT_DOMAIN = "airline"
+
+
+def _tau2_data_files_for(domain: str) -> str:
+    """Resolve the HF tasks.json path for a given tau2 domain."""
+    if domain not in TAU2_AVAILABLE_DOMAINS:
+        raise ValueError(
+            f"tau2 domain must be one of {TAU2_AVAILABLE_DOMAINS}; got {domain!r}"
+        )
+    return f"domains/{domain}/tasks.json"
 
 
 def _build_session_pair(
@@ -153,43 +168,75 @@ def _score_skill_reuse(
 def _tau2_record_to_sample(record: dict[str, Any]) -> "Sample":
     """Adapt a tau2-bench row into an Inspect AI Sample.
 
-    tau2-bench row shape (per HF card, varies by domain split):
-        task_id, instruction, user_id, expected_actions / outcome,
-        domain (airline | retail | telecom), policy_doc.
+    tau2-bench rows (from the `domains/<x>/tasks.json` files) ship with
+    heavily nested JSON-as-string columns:
 
-    Each tau2 row is a multi-step trajectory. For M4 we treat each row
-    as a single training-or-recall sample tagged with the originating
-    task_id; the runner can later pair samples by task_id similarity to
-    measure repeat-time vs first-time.
+        id, description (json str: {purpose, ...}),
+        user_scenario (json str: {persona, instructions, ...}),
+        initial_state (json str | None),
+        evaluation_criteria (json str: {actions, communicate_info, nl_assertions}),
+        annotations (optional).
+
+    For M4 we treat each row as a single training-or-recall sample tagged
+    with `task_id` = `id`; the runner can later pair samples by task_id
+    similarity to measure repeat-time vs first-time.
     """
-    instruction = (
-        record.get("instruction")
-        or record.get("user_instruction")
-        or record.get("description")
-        or ""
-    )
-    expected = (
-        record.get("expected_actions")
-        or record.get("outcome")
-        or record.get("answer")
-        or ""
-    )
-    if isinstance(expected, list):
-        # Convert list-of-actions to a deterministic string for matching.
-        expected = "\n".join(str(a) for a in expected)
+    import json as _json
 
-    task_id = record.get("task_id") or record.get("id") or ""
-    domain = record.get("domain") or "general"
-    policy = record.get("policy_doc") or record.get("policy") or ""
+    def _maybe_json(value: Any) -> Any:
+        if isinstance(value, str):
+            try:
+                return _json.loads(value)
+            except (ValueError, TypeError):
+                return value
+        return value
 
-    prompt_parts = [f"Task: {instruction}"]
-    if policy:
-        prompt_parts.append(f"\nPolicy:\n{policy}")
+    description = _maybe_json(record.get("description"))
+    scenario = _maybe_json(record.get("user_scenario"))
+    criteria = _maybe_json(record.get("evaluation_criteria"))
+
+    if isinstance(description, dict):
+        purpose = description.get("purpose") or description.get("description") or ""
+    else:
+        purpose = str(description or "")
+
+    if isinstance(scenario, dict):
+        persona = scenario.get("persona") or ""
+        task_block = ""
+        instr = scenario.get("instructions") or {}
+        if isinstance(instr, dict):
+            task_block = instr.get("task_instructions") or instr.get("instructions") or ""
+        elif isinstance(instr, str):
+            task_block = instr
+        instruction = task_block or str(scenario)
+    else:
+        persona = ""
+        instruction = str(scenario or "")
+
+    expected_parts: list[str] = []
+    if isinstance(criteria, dict):
+        for key in ("actions", "communicate_info", "nl_assertions"):
+            val = criteria.get(key)
+            if val:
+                expected_parts.append(f"{key}: {_json.dumps(val, default=str)}")
+    else:
+        expected_parts.append(str(criteria or ""))
+    expected = "\n".join(p for p in expected_parts if p)
+
+    task_id = str(record.get("id") or record.get("task_id") or "")
+
+    prompt_parts: list[str] = []
+    if purpose:
+        prompt_parts.append(f"Task purpose: {purpose}")
+    if persona:
+        prompt_parts.append(f"User persona: {persona}")
+    if instruction:
+        prompt_parts.append(f"User instructions:\n{instruction}")
     prompt_parts.append(
         "\nExecute the right multi-step procedure. If you have learned "
         "this procedure in a prior session, apply it directly."
     )
-    prompt = "\n".join(prompt_parts)
+    prompt = "\n\n".join(prompt_parts)
 
     return Sample(
         input=prompt,
@@ -197,7 +244,7 @@ def _tau2_record_to_sample(record: dict[str, Any]) -> "Sample":
         metadata={
             "axis": "M4",
             "phase": "single",  # paired downstream by task_id matching
-            "domain": domain,
+            "domain": "tau2",
             "license_tag": "MIT",
             "source_id": task_id,
             "pair_id": task_id,
@@ -213,6 +260,7 @@ def m4_procedural(
     include_appworld: bool = True,
     include_tau_bench: bool = True,
     hf_split: str = TAU2_DEFAULT_SPLIT,
+    tau2_domain: str = TAU2_DEFAULT_DOMAIN,
 ) -> "Task":
     """Inspect AI Task for axis M4.
 
@@ -220,7 +268,10 @@ def m4_procedural(
     Headline gate: first-time-vs-repeat performance gap <= 2x.
 
     AppWorld (git-only) substituted with tau2-bench (HF-resident MIT).
-    See module docstring for substitution rationale.
+    See module docstring for substitution rationale. `tau2_domain` picks
+    one of airline | retail | telecom | mock — the HF dataset has no
+    parquet shards, so we resolve a single `domains/<d>/tasks.json` via
+    the `data_files=` kwarg.
 
     The `include_appworld` flag is reserved — AppWorld pull is via git
     and goes through corpus/appworld at runtime, not via hf_dataset;
@@ -232,11 +283,14 @@ def m4_procedural(
             "`pip install -e .[dev]` before running M4 task."
         )
 
+    data_files = _tau2_data_files_for(tau2_domain)
+
     ds = hf_dataset(
         path=TAU2_HF_ID,
         split=hf_split,
         sample_fields=_tau2_record_to_sample,
         limit=n_samples,
+        data_files=data_files,
     )
 
     return Task(
@@ -249,11 +303,15 @@ def m4_procedural(
             "session_gap_turns": session_gap_turns,
             "distractor_count": distractor_count,
             "hf_dataset": TAU2_HF_ID,
+            "tau2_domain": tau2_domain,
+            "tau2_data_files": data_files,
             "substitution_note": (
                 "AppWorld is git-only per catalog #25; substituted with "
-                "tau2-bench (MIT, HF-resident). M4_score (1 - repeat/first) "
-                "is computed downstream by scorers/ from telemetry once "
-                "training+recall samples are paired by task_id."
+                "tau2-bench (MIT, HF-resident). tau2-bench-data on HF is "
+                f"loaded per-domain via data_files={data_files!r}. "
+                "M4_score (1 - repeat/first) is computed downstream by "
+                "scorers/ from telemetry once training+recall samples are "
+                "paired by task_id."
             ),
         },
     )
@@ -261,5 +319,7 @@ def m4_procedural(
 
 __all__ = [
     "TAU2_HF_ID",
+    "TAU2_AVAILABLE_DOMAINS",
+    "TAU2_DEFAULT_DOMAIN",
     "m4_procedural",
 ]
