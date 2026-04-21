@@ -57,9 +57,17 @@ DEFAULT_BUDGETS_TOKENS: tuple[int, ...] = (
 )
 
 # Substituting RULER (git-only) with BABILong (HF-resident, permissive).
+# BABILong is organized as (config name, split name) pairs:
+#   configs: "0k", "1k", "2k", "4k", "8k", "16k", "32k", "64k", "128k",
+#            "256k", "512k", "1M"   (token-length buckets)
+#   splits : "qa1".."qa10"          (bAbI task id)
+# Default budget = 32k per spec §2.1.M5; default task = qa1.
 BABILONG_HF_ID = "RMT-team/babilong"
-# BABILong split format is "{length}_{task}" e.g. "0k_qa1", "32k_qa2", etc.
-BABILONG_DEFAULT_SPLIT = "32k_qa1"
+BABILONG_DEFAULT_NAME = "32k"
+BABILONG_DEFAULT_SPLIT = "qa1"
+BABILONG_AVAILABLE_NAMES: tuple[str, ...] = (
+    "0k", "1k", "2k", "4k", "8k", "16k", "32k", "64k", "128k", "256k", "512k", "1M",
+)
 
 
 def _plant_critical_facts(
@@ -264,6 +272,7 @@ def m5_eviction(
     include_babilong: bool = True,
     include_ruler: bool = True,
     hf_split: str = BABILONG_DEFAULT_SPLIT,
+    hf_name: str = BABILONG_DEFAULT_NAME,
 ) -> "Task":
     """Inspect AI Task for axis M5.
 
@@ -274,7 +283,9 @@ def m5_eviction(
     Headline gate: at B=128K, >=80% critical facts preserved; degradation
     curve flatter than -10% per budget halving.
 
-    BABILong is the primary source (HF, permissive). RULER (catalog #12)
+    BABILong is the primary source (HF, permissive). Config `hf_name`
+    controls the token-budget bucket (default "32k" per spec §2.1.M5);
+    `hf_split` picks a bAbI task id (default "qa1"). RULER (catalog #12)
     is git-only and would be wired via runtime corpus path; not in v0.2.
     """
     if hf_dataset is None:  # pragma: no cover — inspect_ai not installed
@@ -283,12 +294,19 @@ def m5_eviction(
             "`pip install -e .[dev]` before running M5 task."
         )
 
+    if hf_name not in BABILONG_AVAILABLE_NAMES:
+        raise ValueError(
+            f"BABILong config must be one of {BABILONG_AVAILABLE_NAMES}; "
+            f"got {hf_name!r}"
+        )
+
     n_total = samples_per_budget * len([b for b in budgets_tokens if b > 0])
     if not n_total:
         n_total = samples_per_budget
 
     ds = hf_dataset(
         path=BABILONG_HF_ID,
+        name=hf_name,
         split=hf_split,
         sample_fields=_babilong_record_to_sample,
         limit=n_total,
@@ -305,12 +323,16 @@ def m5_eviction(
             "n_critical_facts": n_critical_facts,
             "samples_per_budget": samples_per_budget,
             "hf_dataset": BABILONG_HF_ID,
+            "hf_name": hf_name,
+            "hf_split": hf_split,
             "substitution_note": (
                 "RULER is git-only (NVIDIA/RULER, generator script). "
                 "Primary source is BABILong (RMT-team/babilong, HF-resident, "
-                "permissive PG19+bAbI). Eviction-quality score "
-                "(_score_m5_curve) is computed downstream by scorers/ from "
-                "Preserved-facts header in each response."
+                f"permissive PG19+bAbI). Default eviction budget={hf_name} "
+                f"(bAbI task={hf_split}) per spec §2.1.M5. "
+                "Eviction-quality score (_score_m5_curve) is computed "
+                "downstream by scorers/ from Preserved-facts header in each "
+                "response."
             ),
         },
     )
@@ -319,5 +341,8 @@ def m5_eviction(
 __all__ = [
     "DEFAULT_BUDGETS_TOKENS",
     "BABILONG_HF_ID",
+    "BABILONG_AVAILABLE_NAMES",
+    "BABILONG_DEFAULT_NAME",
+    "BABILONG_DEFAULT_SPLIT",
     "m5_eviction",
 ]
