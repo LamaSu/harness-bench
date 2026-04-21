@@ -35,12 +35,13 @@ from typing import Any
 try:
     from inspect_ai import Task, task
     from inspect_ai.dataset import Sample, hf_dataset
-    from inspect_ai.model import ContentImage, ContentText
+    from inspect_ai.model import ChatMessageUser, ContentImage, ContentText
     from inspect_ai.solver import generate
     from inspect_ai.scorer import model_graded_qa
 except ImportError:  # pragma: no cover
     Task = Any  # type: ignore[assignment,misc]
     Sample = Any  # type: ignore[assignment,misc]
+    ChatMessageUser = Any  # type: ignore[assignment,misc]
     ContentImage = Any  # type: ignore[assignment,misc]
     ContentText = Any  # type: ignore[assignment,misc]
     hf_dataset = None  # type: ignore[assignment]
@@ -157,8 +158,13 @@ def _record_to_sample(record: dict[str, Any]) -> "Sample":
 
     modalities_present = sorted(_detect_modalities(record))
 
+    # Inspect AI v0.3+ requires Sample.input to be either str or
+    # list[ChatMessage]. Bare content parts (list[ContentText|ContentImage])
+    # fail Pydantic validation ("input should be a valid string, input_value=
+    # [ContentText(...)], input_type=list"). Wrap the chunks in a single
+    # ChatMessageUser so the task runner gets a valid chat turn.
     return Sample(
-        input=chunks,
+        input=[ChatMessageUser(content=chunks)],
         target=str(target),
         metadata={
             "axis": "M2",
