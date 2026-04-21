@@ -44,12 +44,22 @@ except ImportError:  # pragma: no cover
     def task(fn):  # type: ignore[no-redef]
         return fn
 
-# Primary FreshQA HF mirror (community-maintained per catalog substitution policy).
+# The z-uo/freshqa community mirror is dead (DatasetNotFoundError as of
+# 2026-04-21). LongMemEval knowledge-update slice is now the PRIMARY source;
+# FreshQA flag is retained for future revival of a working mirror.
 FRESHQA_HF_ID = "z-uo/freshqa"
 FRESHQA_DEFAULT_SPLIT = "test"
 
-# Fallback: LongMemEval knowledge-updates slice.
+# Primary source: LongMemEval knowledge-updates slice (MIT, HF-resident).
 LONGMEMEVAL_HF_ID = "xiaowu0162/longmemeval-cleaned"
+LONGMEMEVAL_DEFAULT_SPLIT = "oracle"
+LONGMEMEVAL_DATA_FILES: dict[str, str] = {
+    "oracle": "longmemeval_oracle.json",
+    "s_cleaned": "longmemeval_s_cleaned.json",
+}
+# Upstream column is `question_type`; historical value was "knowledge-update",
+# real dataset uses several — we filter in-memory when the column is present
+# and fall back to using all rows (still adversarial in aggregate) when not.
 LONGMEMEVAL_KU_QA_TYPE = "knowledge-update"
 
 
@@ -214,15 +224,37 @@ def _freshqa_record_to_sample(record: dict[str, Any]) -> "Sample":
 
 
 def _longmemeval_ku_record_to_sample(record: dict[str, Any]) -> "Sample":
-    """Fallback adapter: LongMemEval knowledge-updates slice."""
+    """Primary adapter: LongMemEval knowledge-updates slice.
+
+    Robust to two haystack_sessions shapes:
+        - list[dict] (flat turns)
+        - list[list[dict]] (sessions -> turns) — upstream shipping shape.
+    """
     question = record.get("question") or ""
     answer = record.get("answer") or ""
-    history = record.get("haystack_sessions") or record.get("session_history") or []
+    raw_history = record.get("haystack_sessions") or record.get("session_history") or []
 
-    history_text = "\n\n".join(
-        f"[{turn.get('role', 'user').upper()}] {turn.get('content', '')}"
-        for turn in history if isinstance(turn, dict)
-    ) if history else ""
+    lines: list[str] = []
+
+    def _render_turn(turn: dict[str, Any]) -> str:
+        return f"[{turn.get('role', 'user').upper()}] {turn.get('content', '')}"
+
+    # Detect nested vs flat shape.
+    if raw_history and isinstance(raw_history[0], list):
+        for idx, session in enumerate(raw_history):
+            if not isinstance(session, list):
+                continue
+            lines.append(f"=== Session {idx:03d} ===")
+            for turn in session:
+                if isinstance(turn, dict):
+                    lines.append(_render_turn(turn))
+            lines.append("")
+    else:
+        for turn in raw_history:
+            if isinstance(turn, dict):
+                lines.append(_render_turn(turn))
+
+    history_text = "\n".join(lines).strip()
 
     prompt = (
         f"Conversation history:\n\n{history_text}\n\n"
@@ -231,6 +263,9 @@ def _longmemeval_ku_record_to_sample(record: dict[str, Any]) -> "Sample":
         if history_text
         else f"Question: {question}"
     )
+
+    # Upstream uses `question_type`; keep `qa_type` alias for back-compat.
+    qa_type = record.get("question_type") or record.get("qa_type")
 
     return Sample(
         input=prompt,
@@ -241,7 +276,8 @@ def _longmemeval_ku_record_to_sample(record: dict[str, Any]) -> "Sample":
             "license_tag": "MIT",
             "source_id": record.get("question_id") or "",
             "is_adversarial": True,  # KU slice is inherently adversarial
-            "qa_type": record.get("qa_type"),
+            "qa_type": qa_type,
+            "question_type": qa_type,
         },
     )
 
@@ -252,14 +288,18 @@ def m3_stale_fact(
     pct_adversarial: float = 0.5,
     include_freshqa: bool = True,
     include_realtimeqa: bool = True,
-    use_longmemeval_fallback: bool = False,
-    hf_split: str = FRESHQA_DEFAULT_SPLIT,
+    use_longmemeval_fallback: bool = True,
+    hf_split: str = LONGMEMEVAL_DEFAULT_SPLIT,
 ) -> "Task":
     """Inspect AI Task for axis M3.
 
-    Combines FreshQA (primary) with optional LongMemEval knowledge-updates
-    slice fallback. Headline gate: >=90% last-write-wins AND >=80%
-    contradiction-flag F1. See spec §2.1.M3.
+    Primary source is the LongMemEval knowledge-updates slice (MIT,
+    HF-resident) after the z-uo/freshqa community mirror went offline
+    (DatasetNotFoundError as of 2026-04-21). Headline gate: >=90%
+    last-write-wins AND >=80% contradiction-flag F1. See spec §2.1.M3.
+
+    Flip `use_longmemeval_fallback=False` to attempt the legacy FreshQA
+    path (currently dead upstream — left in place for future revival).
 
     The `include_realtimeqa` flag is reserved — RealTimeQA pulls live and
     not yet wired into the HF loader path; ignored for v0.2.
@@ -271,18 +311,29 @@ def m3_stale_fact(
         )
 
     if use_longmemeval_fallback:
+        # PRIMARY path (post z-uo/freshqa 404). Oracle split only: we pin
+        # `data_files={split: file}` to skip generation of the m_cleaned
+        # split which has Arrow int32 length-prefix overflow upstream.
+        data_file = LONGMEMEVAL_DATA_FILES.get(
+            hf_split, LONGMEMEVAL_DATA_FILES["oracle"]
+        )
         ds = hf_dataset(
             path=LONGMEMEVAL_HF_ID,
-            split="test",
+            split=hf_split,
             sample_fields=_longmemeval_ku_record_to_sample,
             limit=n_samples,
+            data_files={hf_split: data_file},
         )
         dataset_used = LONGMEMEVAL_HF_ID
         substitution_note = (
-            "Using LongMemEval knowledge-updates slice as fallback "
-            "(use_longmemeval_fallback=True)."
+            "z-uo/freshqa community mirror returns 404 (DatasetNotFoundError) "
+            "as of 2026-04-21; primary source flipped to LongMemEval "
+            "knowledge-updates slice (xiaowu0162/longmemeval-cleaned, MIT). "
+            "Oracle split only via data_files — m_cleaned upstream has "
+            "Arrow int32 overflow."
         )
     else:
+        # Legacy / revival path (currently dead upstream).
         ds = hf_dataset(
             path=FRESHQA_HF_ID,
             split=hf_split,
@@ -291,8 +342,10 @@ def m3_stale_fact(
         )
         dataset_used = FRESHQA_HF_ID
         substitution_note = (
-            "Primary FreshQA HF mirror; community-maintained, "
-            "verify field layout on first pull."
+            "Attempting FreshQA mirror (z-uo/freshqa); upstream has been 404 "
+            "since 2026-04-21, expect DatasetNotFoundError until a new mirror "
+            "surfaces. Flip use_longmemeval_fallback=True to use the primary "
+            "LongMemEval KU path."
         )
 
     return Task(
