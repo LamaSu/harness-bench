@@ -26,13 +26,19 @@ Notes
 - /go runs are LONG (minutes; pipeline spawns 5-15 sub-agents).
   Default timeout is 600s; bump for full-sweep mode.
 - Subprocess runs in its OWN cwd (sandbox). Never the benchmark repo.
-- Cost attribution is best-effort: we snapshot the codeburn API
-  (http://localhost:3457/api/codeburn) before + after the run and take
-  the delta. If codeburn isn't reachable (dashboard not running) we
-  return zero cost rather than fail the cell — the runner's separate
-  Anthropic-billing reconciliation is the source of truth.
-- `--max-budget-usd` is forwarded as a hint flag; not all `claude` CLI
-  builds honour it. Treat the cap as advisory, not enforced.
+- Cost attribution: parses ``--output-format stream-json`` NDJSON from
+  stdout. Each turn's ``assistant.message.usage`` block carries partial
+  token counts, and the final ``result`` event carries the authoritative
+  ``total_cost_usd`` and aggregate ``usage`` totals. See
+  ``docs/stream-json-schema.md`` for a full annotated sample captured
+  from Claude Code CLI v2.1.116.
+- Legacy codeburn fallback: if stream-json parsing surfaces zero cost
+  (e.g. older CLI build that doesn't emit ``total_cost_usd``) we fall
+  back to a pre/post codeburn snapshot. This keeps the adapter usable
+  on Windows-only dev machines where codeburn is reachable but the CLI
+  is pinned to a pre-stream-json version.
+- ``--max-budget-usd`` is forwarded as a hint flag; not all ``claude``
+  CLI builds honour it. Treat the cap as advisory, not enforced.
 """
 from __future__ import annotations
 
@@ -131,6 +137,10 @@ class ClaudeCodeGoHarness(Harness):
         self._cost: Cost = Cost()  # cumulative since initialize()
         self._wall_clock: float = 0.0  # cumulative seconds
         self._cost_baseline: Cost | None = None  # codeburn snapshot @ init
+        # Accumulator for per-run stream-json cost. Reset at the start of
+        # every submit_task() call; the final `result` event overwrites
+        # it with the authoritative totals.
+        self._stream_cost_accumulator: Cost = Cost()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -169,13 +179,22 @@ class ClaudeCodeGoHarness(Harness):
         set in the sandbox's ~/.claude/ before initialize().
         """
         full_prompt = f"/go {prompt}" if self.use_go_skill else prompt
+        # --output-format stream-json REQUIRES --verbose in non-interactive
+        # (-p) mode. Both are appended together; see docs/stream-json-schema.md.
         cmd: list[str] = [
             self.claude_bin,
             "-p", full_prompt,
             "--model", self.model,
             "--max-budget-usd", str(self.max_budget_usd),
+            "--output-format", "stream-json",
+            "--verbose",
         ]
         cmd.extend(self.extra_args)
+
+        # Reset the per-run stream-cost accumulator. Any previous run's
+        # totals stay in self._cost (cumulative); this captures just this
+        # submit_task() invocation's spend.
+        self._stream_cost_accumulator = Cost()
 
         t0 = time.time()
         # Emit a synthetic "spawn" event so consumers can mark the start
