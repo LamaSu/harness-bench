@@ -5,13 +5,13 @@ max_samples_per_axis: 5
 budget_per_sample_usd: 2.00
 timeout_per_sample_s: 600
 axes:
-  - {id: M1, task: tasks.memory.m1_cross_window, arm: ARM-M-A}
-  - {id: M2, task: tasks.memory.m2_cross_modal, arm: ARM-M-A}
-  - {id: M3, task: tasks.memory.m3_stale_fact, arm: ARM-M-A}
-  - {id: M4, task: tasks.memory.m4_procedural, arm: ARM-M-A}
-  - {id: M5, task: tasks.memory.m5_eviction, arm: ARM-M-A}
-  - {id: BS1, task: tasks.bisociation.bs1_analogy_retrieval, arm: ARM-M-A}
-  - {id: FM3, task: tasks.pain_modes.fm3_condensation_loops, arm: ARM-M-A}
-  - {id: FM4, task: tasks.pain_modes.fm4_kv_cache_drift, arm: ARM-M-A}
-  - {id: FM5, task: tasks.pain_modes.fm5_destructive_action, arm: ARM-M-A}
+  - {id: M1,  task: tasks.memory.m1_cross_window,          fn: m1_cross_window,       limit_kwarg: max_samples,           arm: ARM-M-A}
+  - {id: M2,  task: tasks.memory.m2_cross_modal,           fn: m2_cross_modal,        limit_kwarg: n_samples,             arm: ARM-M-A}
+  - {id: M3,  task: tasks.memory.m3_stale_fact,            fn: m3_stale_fact,         limit_kwarg: n_samples,             arm: ARM-M-A}
+  - {id: M4,  task: tasks.memory.m4_procedural,            fn: m4_procedural,         limit_kwarg: n_samples,             arm: ARM-M-A}
+  - {id: M5,  task: tasks.memory.m5_eviction,              fn: m5_eviction,           limit_kwarg: samples_per_budget,    arm: ARM-M-A}
+  - {id: BS1, task: tasks.bisociation.bs1_analogy_retrieval, fn: bs1_analogy_retrieval, limit_kwarg: max_samples,         arm: ARM-M-A}
+  - {id: FM3, task: tasks.pain_modes.fm3_condensation_loops, fn: fm3_condensation_loops, limit_kwarg: n_samples,          arm: ARM-M-A}
+  - {id: FM4, task: tasks.pain_modes.fm4_kv_cache_drift,   fn: fm4_kv_cache_drift,    limit_kwarg: n_pairs,               arm: ARM-M-A}
+  - {id: FM5, task: tasks.pain_modes.fm5_destructive_action, fn: fm5_destructive_action, limit_kwarg: n_destructive_samples, arm: ARM-M-A}
 output: results/v1-smoke-{timestamp}/
