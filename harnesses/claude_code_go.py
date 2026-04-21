@@ -76,18 +76,23 @@ class ClaudeCodeGoHarness(Harness):
     """Harness over the Claude Code Go binary + `claude` CLI driving /go.
 
     Driver strategy (per spec §3.2):
-        - Spawns `claude -p "/go <task>"` as a subprocess in a sandbox cwd.
-        - Captures stdout line-by-line; parses each line as JSON if
-          possible, else emits as a `text` Event. (Real-time stream-json
-          parsing is a future improvement once `--output-format
-          stream-json` stabilizes across CLI builds.)
-        - Token + dollar accounting: pre/post snapshot of codeburn API.
+        - Spawns `claude -p "/go <task>" --output-format stream-json
+          --verbose` as a subprocess in a sandbox cwd.
+        - Captures stdout line-by-line as NDJSON; each line is routed
+          through ``_parse_stdout_line`` which classifies the event type
+          (thinking / tool_call / tool_result / message / completion)
+          and updates the cost accumulator when the final ``result``
+          event arrives with ``total_cost_usd``.
+        - Token + dollar accounting: stream-json ``result.usage`` +
+          ``result.total_cost_usd`` is authoritative. Codeburn snapshot
+          delta is retained only as a fallback for older CLI builds.
         - Component-ablation arms wired via env vars / settings.json
           mutations by ComponentAblationHarness; this class just
           validates the layer is supported.
 
-    See docs/02-harness-survey.md §1.7 for layer-by-layer coverage and
-    docs/04-bench-spec.md §3.2 for the per-harness subprocess contract.
+    See docs/02-harness-survey.md §1.7 for layer-by-layer coverage,
+    docs/04-bench-spec.md §3.2 for the per-harness subprocess contract,
+    and docs/stream-json-schema.md for the NDJSON event taxonomy.
     """
 
     name: str = "claude-code-go"
@@ -253,11 +258,11 @@ class ClaudeCodeGoHarness(Harness):
         stdout = stdout_b.decode("utf-8", errors="replace")
         stderr = stderr_b.decode("utf-8", errors="replace")
 
-        # Best-effort line-by-line parse. /go writes a mix of:
-        #   - status bars (ignored as `text` events)
-        #   - agent spawn announcements
-        #   - tool-call traces (when --output-format=stream-json is wired)
-        # For now, attempt JSON-parse-then-fallback-to-text per line.
+        # Line-by-line NDJSON parse. _parse_stdout_line also updates
+        # self._stream_cost_accumulator as a side effect when it sees
+        # the final `result` message. Events we classify as internal
+        # (system / result / rate_limit_event) return None and are
+        # dropped from the yielded stream.
         for line in stdout.splitlines():
             if not line.strip():
                 continue
@@ -275,7 +280,8 @@ class ClaudeCodeGoHarness(Harness):
                 timestamp_unix=time.time(),
             )
 
-        # Refresh cost attribution from codeburn delta.
+        # Compute final cost for this submit_task(). Prefers stream-json
+        # accumulator; codeburn fallback only if stream-json saw zero.
         self._cost = await self._compute_cost_delta()
 
         yield Event(
@@ -295,7 +301,14 @@ class ClaudeCodeGoHarness(Harness):
     # ------------------------------------------------------------------
 
     def get_token_cost(self) -> Cost:
-        """Cumulative cost since initialize(). Best-effort via codeburn."""
+        """Cost for the most recent submit_task() (via stream-json).
+
+        Note: this is NOT cumulative across multiple submit_task() calls
+        — each invocation replaces self._cost with that run's totals.
+        If you need a cross-task aggregate, sum get_token_cost() into
+        your own accumulator between calls. The stream-json `result`
+        event always reports per-run totals, not session-lifetime.
+        """
         return self._cost
 
     def get_wall_clock(self) -> float:
@@ -325,35 +338,202 @@ class ClaudeCodeGoHarness(Harness):
     # Helpers
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _parse_stdout_line(line: str) -> Event | None:
-        """Parse one stdout line into an Event, or return None to drop it."""
+    def _parse_stdout_line(self, line: str) -> Event | None:
+        """Parse one stream-json line into an Event (or yield a batch of them).
+
+        For ``assistant`` messages the CLI can bundle multiple content blocks
+        (thinking + tool_use + text) into a single event. We pick the FIRST
+        semantically meaningful block to emit here; callers that want every
+        content block should iterate ``payload["message"]["content"]``
+        themselves.
+
+        Side effect: updates ``self._stream_cost_accumulator`` whenever a
+        ``result`` event carries ``total_cost_usd`` or a per-turn
+        ``assistant`` event carries a ``usage`` block (the latter is
+        fallback-only and not summed — see ``docs/stream-json-schema.md``
+        on why per-turn ``usage`` would double-count across split
+        thinking/tool_use content blocks).
+
+        Returns ``None`` for ``system`` / ``result`` / ``rate_limit_event``
+        messages (consumed internally) so the caller drops them from the
+        Event stream — except for the ``result`` event, which the outer
+        submit_task() loop detects by reading the accumulator.
+        """
         stripped = line.strip()
         # Try JSON first (real stream-json output)
-        if stripped.startswith("{") or stripped.startswith("["):
-            try:
-                parsed = json.loads(stripped)
-            except json.JSONDecodeError:
-                parsed = None
-            if isinstance(parsed, dict):
-                kind = parsed.get("kind") or parsed.get("type") or "text"
+        if not (stripped.startswith("{") or stripped.startswith("[")):
+            # Stray plain-text line (unusual with stream-json but possible
+            # if hook stderr leaks into stdout on some builds).
+            return Event(
+                kind="text",
+                payload={"line": line},
+                timestamp_unix=time.time(),
+            )
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError:
+            return Event(
+                kind="text",
+                payload={"line": line},
+                timestamp_unix=time.time(),
+            )
+        if not isinstance(parsed, dict):
+            return Event(
+                kind="text",
+                payload={"line": line},
+                timestamp_unix=time.time(),
+            )
+
+        msg_type = parsed.get("type")
+        now = time.time()
+
+        # ---- system / rate_limit: drop silently --------------------------
+        if msg_type in ("system", "rate_limit_event"):
+            return None
+
+        # ---- result: authoritative cost + aggregate usage ----------------
+        if msg_type == "result":
+            usage = parsed.get("usage") or {}
+            dollars = float(parsed.get("total_cost_usd") or 0.0)
+            self._stream_cost_accumulator = Cost(
+                input_tokens=int(usage.get("input_tokens") or 0),
+                output_tokens=int(usage.get("output_tokens") or 0),
+                cached_input_tokens=(
+                    int(usage.get("cache_read_input_tokens") or 0)
+                    + int(usage.get("cache_creation_input_tokens") or 0)
+                ),
+                dollars=dollars,
+            )
+            # Don't emit as an Event — submit_task() emits its own
+            # "completion" event after draining the stream so consumers
+            # see a single canonical finish marker.
+            return None
+
+        # ---- user: tool_result payloads fed back to the model ------------
+        if msg_type == "user":
+            message = parsed.get("message") or {}
+            content_list = message.get("content") or []
+            # Pull out the first tool_result entry if present.
+            for block in content_list:
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") == "tool_result":
+                    return Event(
+                        kind="tool_result",
+                        payload={
+                            "tool_use_id": block.get("tool_use_id"),
+                            "is_error": bool(block.get("is_error")),
+                            "content": block.get("content"),
+                            "stdout": (parsed.get("tool_use_result") or {}).get("stdout"),
+                            "stderr": (parsed.get("tool_use_result") or {}).get("stderr"),
+                            "session_id": parsed.get("session_id"),
+                            "uuid": parsed.get("uuid"),
+                        },
+                        timestamp_unix=now,
+                    )
+            # No tool_result block — drop.
+            return None
+
+        # ---- assistant: message / thinking / tool_call -------------------
+        if msg_type == "assistant":
+            message = parsed.get("message") or {}
+            content_list = message.get("content") or []
+            # Pick the first block we can classify. (Most assistant events
+            # emitted by the CLI contain a single content block; when they
+            # contain multiple, we prefer tool_use > thinking > text.)
+            chosen = None
+            for priority in ("tool_use", "thinking", "text"):
+                for block in content_list:
+                    if isinstance(block, dict) and block.get("type") == priority:
+                        chosen = block
+                        break
+                if chosen is not None:
+                    break
+
+            model_id = message.get("model")
+            msg_id = message.get("id")
+            session_id = parsed.get("session_id")
+            uuid_ = parsed.get("uuid")
+
+            if chosen is None:
+                # Unrecognized content shape — still emit something so the
+                # trace doesn't lose the event.
                 return Event(
-                    kind=str(kind),
-                    payload=parsed,
-                    timestamp_unix=time.time(),
+                    kind="message",
+                    payload={
+                        "raw_message": message,
+                        "session_id": session_id,
+                        "uuid": uuid_,
+                        "model": model_id,
+                    },
+                    timestamp_unix=now,
                 )
-        # Fallback: treat as plain text / status line.
+
+            block_type = chosen.get("type")
+            if block_type == "tool_use":
+                return Event(
+                    kind="tool_call",
+                    payload={
+                        "tool_use_id": chosen.get("id"),
+                        "tool_name": chosen.get("name"),
+                        "tool_input": chosen.get("input"),
+                        "caller": chosen.get("caller"),
+                        "session_id": session_id,
+                        "uuid": uuid_,
+                        "model": model_id,
+                        "message_id": msg_id,
+                    },
+                    timestamp_unix=now,
+                )
+            if block_type == "thinking":
+                return Event(
+                    kind="thinking",
+                    payload={
+                        "thinking": chosen.get("thinking"),
+                        "session_id": session_id,
+                        "uuid": uuid_,
+                        "model": model_id,
+                        "message_id": msg_id,
+                    },
+                    timestamp_unix=now,
+                )
+            # default: text → message
+            return Event(
+                kind="message",
+                payload={
+                    "text": chosen.get("text"),
+                    "session_id": session_id,
+                    "uuid": uuid_,
+                    "model": model_id,
+                    "message_id": msg_id,
+                },
+                timestamp_unix=now,
+            )
+
+        # ---- unknown types: pass through as 'text' ----------------------
         return Event(
-            kind="text",
-            payload={"line": line},
-            timestamp_unix=time.time(),
+            kind=str(msg_type or "text"),
+            payload=parsed,
+            timestamp_unix=now,
         )
 
     async def _compute_cost_delta(self) -> Cost:
-        """Return (current codeburn snapshot - baseline taken at init)."""
-        current = self._fetch_codeburn_snapshot()
-        baseline = self._cost_baseline or Cost()
-        return current.delta(baseline)
+        """Return the best available cost for the just-finished submit_task().
+
+        Prefers the stream-json accumulator (authoritative, includes
+        cache-tier pricing). Falls back to the codeburn snapshot-delta
+        pattern only if stream-json parsing produced zero dollars AND a
+        baseline was captured at initialize().
+        """
+        if self._stream_cost_accumulator.dollars > 0.0:
+            return self._stream_cost_accumulator
+        # Fallback: pre-stream-json CLI builds or aborted runs where no
+        # `result` event was emitted. Only meaningful on Windows dev boxes
+        # with a running codeburn dashboard.
+        if self._cost_baseline is not None:
+            current = self._fetch_codeburn_snapshot()
+            return current.delta(self._cost_baseline)
+        return Cost()
 
     @staticmethod
     def _fetch_codeburn_snapshot() -> Cost:
