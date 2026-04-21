@@ -1,0 +1,89 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "harness-bench"
+version = "0.1.0"
+description = "Harness-vs-harness benchmark suite for agentic AI on Inspect AI"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "harness-bench contributors" },
+]
+keywords = ["llm", "agent", "benchmark", "inspect-ai", "harness", "memory", "bisociation"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    # Inspect AI substrate
+    "inspect-ai>=0.3.105",
+    # Trace export — OpenInference / OTLP
+    "openinference-instrumentation>=0.1.0",
+    "openinference-semantic-conventions>=0.1.0",
+    "opentelemetry-sdk>=1.26.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.26.0",
+    # Schema + validation
+    "pydantic>=2.7",
+    # HuggingFace dataset loaders
+    "datasets>=2.20",
+    "huggingface-hub>=0.25",
+    # Score utility / data wrangling
+    "numpy>=1.26",
+    "pandas>=2.2",
+    "pyarrow>=15.0",
+    # Multi-modal sample handling
+    "Pillow>=10.0",
+    # Krippendorff alpha for judge agreement
+    "krippendorff>=0.6",
+    # Async + retry
+    "anyio>=4.4",
+    "tenacity>=8.5",
+    # CLI
+    "typer>=0.12",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
+    "ruff>=0.5",
+    "mypy>=1.10",
+]
+# Per-harness extras — installed only on the cell where that harness runs
+harness-aider = ["aider-chat>=0.50"]
+harness-openhands = ["openhands>=0.10"]
+# claude_code_go uses the user's existing /go pipeline — no pip dep
+# cline / continue_dev / goose / cursor / devin: managed via prep_spark.sh
+
+[project.scripts]
+harness-bench = "harness_bench.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/LamaSu/harness-bench"
+Issues = "https://github.com/LamaSu/harness-bench/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["harness_bench*", "tasks*", "harnesses*", "scorers*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
